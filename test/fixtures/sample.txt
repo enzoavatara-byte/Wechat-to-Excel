@@ -1,0 +1,60 @@
+①Tingkat saat ini: L1
+②Nama proyek: E245
+③Nama proses: Finishing
+④Waktu kejadian:2026.10.20/18:05
+⑤Deskripsi : pergantian lem kotak B Upper modul
+⑥-1Jenis masalah: Change over
+⑥-2Respond PIC : @iqbal @M Arif Rahman @Muhamad gilang
+⑦-1Status lini produksi: Mesin pulih
+⑦-2Status Penanganan: Selesai penanganan
+⑧Waktu penutupan:2026.10.20/ 18:23
+⑨Durasi dampak: 18 menit
+
+①Tingkat saat ini: L1
+②Nama proyek: E245
+③Nama proses:Preassy
+④Waktu kejadian:2026.10.20/17.20
+⑤Deskripsi : pergantian lem kotak A
+⑥-1Jenis masalah: Change over
+⑥-2Respond PIC : @iqbal @M Arif Rahman @Muhamad gilang
+⑦-1Status lini produksi: Mesin pulih kembali
+⑦-2Status Penanganan: Selesai penanganan
+⑧Waktu penutupan:2026.10.20/17.40
+⑨Durasi dampak: 20 menit
+
+ ①Tingkat saat ini: L1
+②Nama proyek: E245
+③Nama proses: Finishing
+④Waktu kejadian:2026.10.20/19:15
+⑤Deskripsi : mesin lem upper pack stuck saat peroses pengeleman
+⑥-1Jenis masalah: Change over
+⑥-2Respond PIC : @iqbal @Muhamad gilang
+⑦-1Status lini produksi: Mesin pulih
+⑦-2Status Penanganan: sudah penanganan
+⑧Waktu penutupan:2026.10.20/ 19:27
+⑨Durasi dampak: 12 menit
+
+
+ ①Tingkat saat ini: L1
+②Nama proyek: E245
+③Nama proses: Press Modul
+④Waktu kejadian:2026.10.20/ 20:15
+⑤Deskripsi : Posisi nozzle tidak masuk pada pallet
+⑥-1Jenis masalah:Mesin
+⑥-2Respond PIC : @muhamad gilang
+⑦-1Status lini produksi: Mesin pulih
+⑦-2Status Penanganan: Selesai penanganan
+⑧Waktu penutupan:2026.10.20/ 20:23
+⑨Durasi dampak: 8 Menit
+
+ ①Tingkat saat ini: L1
+②Nama proyek: E245
+③Nama proses: finishing
+④Waktu kejadian:2026.10.20/ 21:24
+⑤Deskripsi : mesin lem upper pack stuck
+⑥-1Jenis masalah:mesin
+⑥-2Respond PIC : @Alvansa
+⑦-1Status lini produksi: Mesin pulih
+⑦-2Status Penanganan: sudah penanganan
+⑧Waktu penutupan:2026.10.20/21:40
+⑨Durasi dampak: 16
