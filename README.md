@@ -5,10 +5,12 @@ Mengubah laporan masalah produksi dari grup WeChat (format ①–⑨) menjadi ba
 Kode di-paste manual ke editor Apps Script (tanpa clasp): **cukup 2 file dari folder [`dist/`](dist/)**.
 
 ```
-PASTE teks WeChat → PERIKSA (centang, pilih Discipline) → IMPOR → lengkapi sel kuning (tanya mentor)
+PASTE teks WeChat → PERIKSA (centang, pilih Discipline, cek terjemahan) → IMPOR → lengkapi kolom kosong (tanya mentor)
 ```
 
 ![Layar Periksa](docs/screenshot.png)
+
+*Contoh layar Periksa. Teks Mandarin di gambar berasal dari penerjemah palsu di test, bukan Google Translate.*
 
 ---
 
@@ -21,6 +23,7 @@ PASTE teks WeChat → PERIKSA (centang, pilih Discipline) → IMPOR → lengkapi
 | `dist/appsscript.json` | Manifest |
 | `src/` | Sumber asli, dipecah per bagian. `dist/` dibuat dari sini dengan `npm run build`. **Jangan edit `dist/` langsung** |
 | `src/Config.gs` | **Semua** konfigurasi: sheet per proyek, `DISCIPLINE_MAP`, jenis yang dilewati, kolom, warna, format |
+| `src/Translate.gs` | Terjemahan ke format manajer `中文\n(English)` + menu *Terjemahkan sel terpilih* |
 | `src/Parser.gs` | Fungsi murni (tanpa `SpreadsheetApp`): `parseReports`, `parseOne`, `parseDateTime`, pemetaan ke kolom |
 | `src/Sheet.gs` | `findNextRow`, `writeRecord`, `previewWeChat`, `importWeChat`, pengaman sheet, deteksi duplikat |
 | `src/Template.gs` | Menu **Buat sheet baru**: format sheet manajer + `createIssueSheet` |
@@ -79,12 +82,32 @@ PASTE teks WeChat → PERIKSA (centang, pilih Discipline) → IMPOR → lengkapi
 4. **Periksa** setiap kartu:
    - Centang = akan ditulis. **Change over default tidak dicentang** (lihat bagian 6).
    - Laporan yang sudah ada di sheet ditandai **"sudah ada: … baris N"** dan tidak dicentang.
-   - Discipline bisa dipilih manual; kosong = sel H kuning.
-   - Peringatan kuning menunjukkan field yang gagal terbaca + kolom yang terdampak.
+   - Discipline bisa dipilih manual; kosong = sel H dibiarkan kosong.
+   - Machine, Deskripsi, dan Notes tampil persis seperti yang akan ditulis (中文 lalu (English)), plus teks aslinya.
+     Baca baris English-nya: kalau artinya melenceng, terjemahan Mandarinnya juga melenceng.
+   - Peringatan menunjukkan field yang gagal terbaca + kolom yang terdampak.
 5. **Impor N laporan.**
 6. Halaman **Selesai**: link langsung ke tiap baris, dan **Pertanyaan untuk mentor** (tombol *Salin*)
-   berisi Root Cause, Solusi, dan semua sel kuning lain per laporan, siap dikirim.
-7. Setelah dapat jawaban, isi sel kuning lalu hapus warnanya (Fill color → None).
+   berisi Root Cause, Solusi, dan semua kolom kosong lain per laporan, siap dikirim.
+7. Setelah dapat jawaban, ketik Root Cause/Solution dalam Bahasa Indonesia di E/F, pilih sel-selnya, lalu
+   **WeChat Import → Terjemahkan sel terpilih (中文 + English)**. Teks asli disimpan di catatan sel.
+
+### 3b. Terjemahan
+- **Format** sama dengan sheet manajer: Mandarin, lalu baris baru, lalu Inggris dalam kurung.
+  - C: `E245精加工` / `(E245 Finishing)`, seperti `E245模组入箱` / `(E245 module installation into enclosure)`.
+  - D: terjemahan deskripsi.
+  - K: `等级：L1；开始：18:05；影响时长：18分钟；类型：换型；…` / `(Level: L1; Start: 18:05; Downtime: 18 min; Type: Changeover; …)`.
+- **Tidak diterjemahkan:** H (harus sama dengan isi dropdown), I (nama orang), G/J (jam/tanggal).
+- **Mesin:** Google Translate bawaan Apps Script (gratis, tanpa API key). Indonesia → English → 中文, jadi kedua
+  bahasa mengatakan hal yang sama. Semua teks satu impor dikirim sekaligus (±2 panggilan per pratinjau/impor).
+- **Istilah tetap** di `TERMS` (Config) tidak lewat mesin: changeover → 换型, Preassy → 预装 (keduanya dari file
+  manajer), status operator (Mesin pulih, Selesai penanganan, …). `ZH_FIXES` mengganti 模块 → 模组 seperti di file manajer.
+- **Nama proses (③) yang belum ada di `TERMS`** diterjemahkan mesin dan diberi peringatan. Tanyakan nama Mandarin
+  resmi stasiun (Finishing, Press Modul, …) ke mentor/manajer **sekali**, masukkan ke `TERMS`, maka C konsisten.
+- **Teks asli Indonesia** disimpan sebagai **catatan sel** (segitiga kecil di pojok, muncul saat kursor di atasnya):
+  C & D berisi teks aslinya, K berisi field asli + semua peringatan. Deteksi duplikat memakai teks asli ini.
+- **Kalau terjemahan gagal** (kuota habis, jaringan): tidak ada yang ditulis; layar Periksa menawarkan
+  *Coba lagi* atau *Lanjut tanpa terjemahan*. Mematikan permanen: `TRANSLATE = false` di Config.
 
 ### 3a. Buat sheet baru (format manajer)
 Menu **WeChat Import → Buat sheet baru (format manajer)…**, atau tautan **+ Sheet baru** di sebelah
@@ -118,14 +141,17 @@ Yang **tidak** bisa sama persis:
 | Kolom | Isi |
 |---|---|
 | **B** No.序号 (*xùhào*, nomor urut) | Kalau sudah ada nomor, tidak diubah. Kalau kosong: nomor terbesar di atasnya + 1 |
-| **C** Machine | `② - ③`, mis. `E245 - Finishing`. Ditulis apa adanya (`finishing` tetap huruf kecil) |
-| **D** Issue Description | ⑤ (multi-baris dipertahankan) |
-| **E** Root Cause, **F** Solution | **Selalu kosong + kuning** `#FFF2CC`. Diisi manual |
+| **C** Machine | `②③中文` / `(② ③ English)`, mis. `E245精加工` / `(E245 Finishing)`. Tanpa terjemahan: `E245 - Finishing` |
+| **D** Issue Description | ⑤ → `中文` / `(English)` (multi-baris dipertahankan) |
+| **E** Root Cause, **F** Solution | **Selalu kosong**, tanpa warna. Diisi manual, lalu bisa diterjemahkan lewat menu |
 | **G** End Time | Jam dari ⑧, format `h:mm` |
-| **H** Discipline | ⑥-1 lewat `DISCIPLINE_MAP` (huruf besar/kecil, spasi, strip diabaikan). Tidak terpetakan → kosong + kuning + peringatan |
+| **H** Discipline | ⑥-1 lewat `DISCIPLINE_MAP` (huruf besar/kecil, spasi, strip diabaikan). Tidak terpetakan → kosong + peringatan |
 | **I** Responsibility | ⑥-2 tanpa `@`, digabung `", "` |
 | **J** Date | Tanggal dari ④, format `yyyy/mm/dd` |
-| **K** Notes | Level ①, jam mulai ④, durasi, jenis asli ⑥-1, ⑦-1, ⑦-2, lalu satu baris `⚠` per peringatan |
+| **K** Notes | Level ①, jam mulai ④, durasi, jenis ⑥-1, ⑦-1, ⑦-2 dalam `中文` / `(English)`. Peringatan ada di catatan sel K |
+
+**Tidak ada sel yang diwarnai.** Baris yang ditulis tool latarnya dikembalikan polos (sisa kuning dari versi lama
+ikut hilang). Kolom yang masih harus dilengkapi tampil di layar Periksa, layar Selesai, dan teks pertanyaan mentor.
 
 - **Sheet tujuan:** proyek di `PROJECT_SHEET` (E245 → `Geely list (2)`); proyek lain → sheet yang dipilih di UI.
 - **Baris tujuan:** baris pertama mulai baris 9 yang **C dan D-nya kosong**.
@@ -134,9 +160,13 @@ Yang **tidak** bisa sama persis:
 - Teks di C/D/I yang diawali `=` `+` `-` `@` atau mirip angka diberi awalan `'` (tidak terlihat), supaya
   Sheets tidak membacanya sebagai rumus. Contoh: deskripsi berpoin `- lem habis` tanpa ini jadi `#ERROR!`.
 
-Contoh Notes:
+Contoh Notes (K) dan catatan selnya:
 ```
-Level: L1 | Mulai: 18:05 | Durasi: 18 menit | Jenis: Change over | Lini: Mesin pulih | Penanganan: Selesai penanganan
+等级：L1；开始：18:05；影响时长：18分钟；类型：换型；产线状态：设备已恢复；处理状态：处理完成
+(Level: L1; Start: 18:05; Downtime: 18 min; Type: Changeover; Line status: Machine recovered; Handling: Handling completed)
+
+[catatan sel K]
+Asli (ID): Level: L1 | Jenis: Change over | Lini: Mesin pulih | Penanganan: Selesai penanganan
 ⚠ ⑥-1 jenis "Change over" belum dipetakan ke Discipline
 ```
 
@@ -147,7 +177,7 @@ spasi tidak konsisten (`2026.10.20/ 21:24`), `:` atau `：`, angka/tanda baca fu
 laporan yang lupa menulis ①, dan `⑥` tanpa `-1/-2`. Jam boleh `18:05` atau `18.05`.
 
 ### Jangan mengarang data
-Field yang gagal terbaca **dikosongkan + kuning**, dan teks aslinya dicatat di Notes. Khususnya:
+Field yang gagal terbaca **dikosongkan**, dan teks aslinya dicatat di catatan sel K (atau di K, tanpa terjemahan). Khususnya:
 - Tanggal hanya dibaca kalau **tahun.bulan.tanggal**. `20/10/2026` ditolak (DD/MM vs MM/DD ambigu); `26.10.20` ditolak (tahun 2 digit).
 - Field teks tanpa `:` ditolak (label & isi tidak bisa dipisah dengan pasti).
 - ⑧ tanpa tanggal → durasi tidak dihitung (tidak diasumsikan hari yang sama).
@@ -164,7 +194,10 @@ Field yang gagal terbaca **dikosongkan + kuning**, dan teks aslinya dicatat di N
 | `SKIP_TYPES` | Jenis ⑥-1 yang default tidak dicentang (`'changeover'`) |
 | `DISCIPLINES` | Harus sama persis dengan dropdown di sheet (`I2:I5`) |
 | `HEADER_CHECK` | Teks awal B8, C8, D8. Sheet lain tidak akan pernah ditulisi |
-| `ROW`, `COL`, `COLOR`, `FORMAT` | Posisi header/data, nomor kolom, warna kuning, format G/J |
+| `TRANSLATE` | `true` = C, D, K diterjemahkan ke `中文\n(English)`; `false` = Bahasa Indonesia apa adanya |
+| `TERMS` | Istilah tetap `[中文, English]` yang tidak lewat mesin. **Tambahkan nama proses (③) di sini** |
+| `ZH_FIXES` | Ganti kata hasil mesin dengan istilah file manajer (`模块` → `模组`) |
+| `ROW`, `COL`, `FORMAT` | Posisi header/data, nomor kolom, format G/J |
 
 ---
 
@@ -172,11 +205,11 @@ Field yang gagal terbaca **dikosongkan + kuning**, dan teks aslinya dicatat di N
 
 1. **"Change over" masuk Discipline apa?** Belum diputuskan → baris di `DISCIPLINE_MAP` masih dikomentari.
    Sesuai instruksi terakhir, change over (mis. pergantian lem) **default tidak diimpor**: tetap tampil di
-   layar Periksa tapi tidak dicentang. Kalau dicentang manual, H kosong + kuning, kecuali Discipline dipilih.
+   layar Periksa tapi tidak dicentang. Kalau dicentang manual, H kosong, kecuali Discipline dipilih.
    Setelah diputuskan: aktifkan baris di `DISCIPLINE_MAP`, dan hapus `'changeover'` dari `SKIP_TYPES` kalau
    memang harus ikut diimpor.
-2. **Bahasa.** Sheet manajer berformat 中文 (*zhōngwén*, bahasa Mandarin) + (English); input operator Bahasa
-   Indonesia. Tool menulis apa adanya, **tidak ada fitur terjemahan**.
+2. **Nama Mandarin resmi untuk proses (③)** seperti Finishing dan Press Modul: belum ada, jadi masih diterjemahkan
+   mesin (dan diberi peringatan). Tanyakan ke mentor/manajer lalu isi `TERMS`.
 
 ---
 
@@ -185,20 +218,26 @@ Field yang gagal terbaca **dikosongkan + kuning**, dan teks aslinya dicatat di N
 1. **Label dari operator dipercaya apa adanya.** Contoh nyata di data uji: laporan 19:15 berlabel *Change over*,
    isinya *"mesin lem upper pack stuck saat peroses pengeleman"* (mesin macet 12 menit). Laporan itu ikut
    **tidak dicentang**. Selalu baca kartu "default tidak diimpor" sebelum menekan Impor.
-2. **Deteksi duplikat** membandingkan Machine + Deskripsi + End Time + Date di sheet. Kalau baris sudah diedit
-   (mis. D diterjemahkan), paste ulang chat yang sama **tidak** terdeteksi sebagai duplikat.
-3. **Dropdown H** di file asli hanya ada di `H9:H35`. Mulai baris 36 tidak ada dropdown. Tool tetap menulis
+2. **Deteksi duplikat** membandingkan Machine + Deskripsi + End Time + Date di sheet (untuk C/D yang
+   diterjemahkan: teks asli dari catatan sel). Kalau catatan selnya dihapus atau teksnya diketik ulang manual,
+   paste ulang chat yang sama **tidak** terdeteksi sebagai duplikat.
+3. **Terjemahan mesin bisa salah**, terutama untuk bahasa lapangan dan typo operator ("peroses pengeleman").
+   Manajer membaca Mandarin-nya, jadi cek baris English di layar Periksa sebelum impor. Teks asli selalu ada di
+   catatan sel. Kuota Google Translate: ±5.000 panggilan/hari (akun Gmail).
+4. **Izin LanguageApp belum terverifikasi di dokumentasi resmi**: `setup` menjalankan satu terjemahan uji dan
+   melaporkan `✓`/`✗`, jadi masalah izin ketahuan sebelum impor.
+5. **Dropdown H** di file asli hanya ada di `H9:H35`. Mulai baris 36 tidak ada dropdown. Tool tetap menulis
    nilai yang valid, tapi tidak menambah validasi ke sheet manajer.
-4. **`LImo 7 list` baris 15–17**: J sudah berisi tanggal tapi C & D kosong → dianggap baris kosong; J akan
+6. **`LImo 7 list` baris 15–17**: J sudah berisi tanggal tapi C & D kosong → dianggap baris kosong; J akan
    ditimpa tanggal laporan.
-5. **Kolom J baris lama** tersimpan sebagai angka berformat *General* (tampil `46313`). Baris dari tool tampil
+7. **Kolom J baris lama** tersimpan sebagai angka berformat *General* (tampil `46313`). Baris dari tool tampil
    `2026/10/20`. Tool tidak mengubah baris lama.
-6. **F5 "Total tasks"** = `COUNT(B9:B204)-3` menghitung nomor yang sudah diisi di muka (sekarang 11, padahal
+8. **F5 "Total tasks"** = `COUNT(B9:B204)-3` menghitung nomor yang sudah diisi di muka (sekarang 11, padahal
    isinya 9). Itu rumus sheet manajer, bukan dari tool. Sheet dari menu *Buat sheet baru* **sengaja** memakai
    rumus & nomor 1–14 yang sama (keputusan: sama persis), jadi sheet kosong pun menunjukkan 11.
-8. **Baris 36 dst.** di sheet manajer maupun sheet buatan menu tidak punya garis & dropdown. Tool tetap menulis
+9. **Baris 36 dst.** di sheet manajer maupun sheet buatan menu tidak punya garis & dropdown. Tool tetap menulis
    ke sana, tapi tanpa format.
-7. **Web app "Only myself"**: hanya pemilik yang bisa membuka. Kalau orang lain perlu memakainya, mereka butuh
+10. **Web app "Only myself"**: hanya pemilik yang bisa membuka. Kalau orang lain perlu memakainya, mereka butuh
    akses Editor ke spreadsheet + deployment *Execute as: User accessing*, dengan risiko yang sama seperti proyek MTTR.
 
 ---
@@ -229,7 +268,8 @@ npm run build   # buat ulang dist/ setelah mengubah src/
 - `test/parser.test.js`: 5 laporan asli di `test/fixtures/sample.txt` + kasus rusak (field hilang, tanggal
   salah, tanpa `:`, teks tanpa ①–⑨, ⑨ beda, ⑧ < ④, lewat tengah malam, duplikat).
 - `test/sheet.test.js`: penulisan dengan mock Sheets yang meniru file manajer (baris tujuan, nomor B,
-  kuning, pengaman sheet, duplikat, urutan tulis).
+  tanpa warna, pengaman sheet, duplikat, urutan tulis) dan terjemahan dengan penerjemah palsu (format
+  `中文\n(English)`, TERMS, ZH_FIXES, satu panggilan per bahasa, gagal → tidak menulis, menu terjemahkan sel).
 - `test/template.test.js`: menu *Buat sheet baru* (isi & struktur sama dengan file manajer, Revision_History,
   rute kode proyek termasuk rename/hapus sheet, nama/kode dobel ditolak, spreadsheet kosong).
 - `test/dist.test.js`: `dist/` harus sama dengan hasil build dari `src/` (gagal kalau lupa `npm run build`),
@@ -264,3 +304,5 @@ setelah setup: impor fixture ke **salinan** spreadsheet dan bandingkan dengan ta
 | – | Deteksi duplikat | Paste ulang chat yang sama adalah kesalahan yang paling mungkin terjadi |
 | – | "Pertanyaan untuk mentor" | Alur kerja nyata: data yang kurang ditanyakan ke mentor |
 | – | `test/sheet.test.js` | Penulisan ke sheet adalah bagian yang bisa merusak file manajer |
+| E & F + field gagal → kuning `#FFF2CC` | **Tanpa warna** | Permintaan berikutnya: "hapuskan pewarnaan pada bagian yang kosong". Daftar kolom kosong tetap ada di layar & teks mentor |
+| Bahasa: tanpa terjemahan | C, D, K `中文\n(English)` + menu terjemahkan sel | Permintaan berikutnya: terjemahkan semuanya sesuai format manajer. Teks asli disimpan di catatan sel |

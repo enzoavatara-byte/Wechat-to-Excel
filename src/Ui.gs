@@ -7,6 +7,7 @@ function onOpen() {
     .createMenu('WeChat Import')
     .addItem('Import laporan WeChat…', 'showImportDialog')
     .addItem('Buat sheet baru (format manajer)…', 'showNewSheetDialog')
+    .addItem('Terjemahkan sel terpilih (中文 + English)', 'translateSelection')
     .addSeparator()
     .addItem('Cek setup', 'setup')
     .addToUi();
@@ -31,6 +32,15 @@ function setup() {
     ok('Timezone spreadsheet diubah: ' + oldTz + ' → ' + tz);
   } else {
     ok('Timezone spreadsheet: ' + tz);
+  }
+
+  if (TRANSLATE) {
+    try {
+      var en = translateTexts_(['mesin macet'], 'id', 'en');
+      ok('Terjemahan aktif: "mesin macet" → "' + fixZh_(translateTexts_(en, 'en', 'zh-CN')[0]) + '" (' + en[0] + ')');
+    } catch (e) {
+      bad('Terjemahan gagal: ' + (e.message || e) + '. Impor masih bisa tanpa terjemahan.');
+    }
   }
 
   var sheets = issueSheetNames_(ss);

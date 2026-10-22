@@ -82,16 +82,17 @@ test('fixture: Machine = "② - ③" (spasi dirapikan, huruf tidak diubah)', () 
   ]);
 });
 
-test('fixture: nilai kolom G/J berupa nomor seri + kolom kuning', () => {
+test('fixture: nilai kolom G/J berupa nomor seri + daftar kolom kosong', () => {
   const recs = gas.parseReports(SAMPLE);
   const ok = gas.buildRow_(byStart(recs, '20:15'));
   assert.equal(ok.values.DATE, 46315); // 2026/10/20
   assert.equal(ok.values.END_TIME, (20 * 60 + 23) / 1440);
   assert.equal(ok.values.DISCIPLINE, 'Machine');
-  assert.deepEqual(Array.from(ok.yellow), ['ROOT_CAUSE', 'SOLUTION']);
+  assert.deepEqual(Array.from(ok.empty), ['ROOT_CAUSE', 'SOLUTION']);
+  assert.deepEqual(plain(ok.notes), {}); // tanpa terjemahan: tidak ada catatan sel
 
   const co = gas.buildRow_(byStart(recs, '18:05'));
-  assert.deepEqual(Array.from(co.yellow), ['ROOT_CAUSE', 'SOLUTION', 'DISCIPLINE']);
+  assert.deepEqual(Array.from(co.empty), ['ROOT_CAUSE', 'SOLUTION', 'DISCIPLINE']);
   assert.equal(co.values.NOTES,
     'Level: L1 | Mulai: 18:05 | Durasi: 18 menit | Jenis: Change over | Lini: Mesin pulih | Penanganan: Selesai penanganan\n' +
     '⚠ ⑥-1 jenis "Change over" belum dipetakan ke Discipline');
@@ -195,25 +196,25 @@ test('deskripsi beberapa baris dipertahankan', () => {
 
 // ---------- Kasus rusak: jangan mengarang data ----------
 
-test('field hilang: tanpa ⑧ -> G kosong + kuning, durasi tidak dihitung', () => {
+test('field hilang: tanpa ⑧ -> G kosong, durasi tidak dihitung', () => {
   const r = gas.parseOne(report({ '⑧': null }));
   assert.equal(r.end.time, null);
   assert.equal(r.duration, null);
   assert.ok(msgs(r).includes('⑧ Waktu penutupan tidak ada'));
   const row = gas.buildRow_(r);
   assert.equal(row.values.END_TIME, '');
-  assert.ok(row.yellow.includes('END_TIME'));
+  assert.ok(row.empty.includes('END_TIME'));
   assert.ok(row.values.NOTES.includes('Durasi: 18 menit (dari ⑨, belum diverifikasi)'));
 });
 
-test('field hilang: tanpa ①, ⑤, ⑥-2 -> kosong + kuning + peringatan', () => {
+test('field hilang: tanpa ①, ⑤, ⑥-2 -> kosong + peringatan', () => {
   const r = gas.parseOne(report({ '①': null, '⑤': null, '⑥-2': null }));
   assert.equal(r.level, '');
   assert.equal(r.description, '');
   assert.equal(r.pic, '');
   assert.equal(r.writable, true); // Machine masih ada
   assert.deepEqual(msgs(r), ['① Level tidak ada', '⑤ Deskripsi tidak ada', '⑥-2 PIC tidak ada']);
-  assert.deepEqual(Array.from(gas.buildRow_(r).yellow), ['ROOT_CAUSE', 'SOLUTION', 'DESC', 'PIC']);
+  assert.deepEqual(Array.from(gas.buildRow_(r).empty), ['ROOT_CAUSE', 'SOLUTION', 'DESC', 'PIC']);
 });
 
 test('field kosong atau "-" dianggap kosong', () => {
@@ -225,7 +226,7 @@ test('field kosong atau "-" dianggap kosong', () => {
   assert.ok(msgs(r).includes('⑥-2 PIC kosong'));
 });
 
-test('format tanggal salah: J kosong + kuning, teks asli masuk peringatan', () => {
+test('format tanggal salah: J kosong, teks asli masuk peringatan', () => {
   const r = gas.parseOne(report({ '④': 'Waktu kejadian: 20/10/2026 18:05' }));
   assert.equal(r.start.date, null);
   assert.equal(gas.fmtTime_(r.start.time), '18:05');
@@ -233,7 +234,7 @@ test('format tanggal salah: J kosong + kuning, teks asli masuk peringatan', () =
   assert.ok(msgs(r).includes('④ Waktu kejadian tanggal tidak terbaca: "20/10/2026 18:05"'));
   const row = gas.buildRow_(r);
   assert.equal(row.values.DATE, '');
-  assert.ok(row.yellow.includes('DATE'));
+  assert.ok(row.empty.includes('DATE'));
 });
 
 test('tanpa ":" pada field teks -> kosong, teks asli disimpan di peringatan', () => {
@@ -306,7 +307,7 @@ test('Discipline dipilih manual di pratinjau', () => {
   assert.equal(r.missing.DISCIPLINE, false);
   assert.deepEqual(plain(r.warnings), []);
   assert.ok(gas.buildNotes_(r).includes('Discipline dipilih manual'));
-  assert.deepEqual(Array.from(gas.buildRow_(r).yellow), ['ROOT_CAUSE', 'SOLUTION']);
+  assert.deepEqual(Array.from(gas.buildRow_(r).empty), ['ROOT_CAUSE', 'SOLUTION']);
 
   const bad = gas.applyDisciplineChoice_(co(), 'Bukan dropdown');
   assert.equal(bad.discipline, '');

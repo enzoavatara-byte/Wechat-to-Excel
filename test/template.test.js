@@ -9,7 +9,7 @@ const assert = require('node:assert/strict');
 const { loadGas, plain, readFixture } = require('./helpers');
 const { MockSheet, MockSpreadsheet, managerSpreadsheet, services } = require('./mock-sheets');
 
-const FILES = ['Config.gs', 'Parser.gs', 'Sheet.gs', 'Template.gs', 'Ui.gs'];
+const FILES = ['Config.gs', 'Parser.gs', 'Translate.gs', 'Sheet.gs', 'Template.gs', 'Ui.gs'];
 const SAMPLE = readFixture('sample.txt');
 
 function load(ss) {
@@ -115,7 +115,7 @@ test('kode proyek: laporan ②Nama proyek: L-7 otomatis masuk sheet baru, mulai 
   const res = plain(gas.importWeChat(text, 'LImo 7 list', p.records.map((r) => ({ id: r.id }))));
   assert.deepEqual(res.written.map((w) => [w.sheet, w.row, w.no]), [['L7 list', 9, 1], ['L7 list', 10, 2]]);
   const sh = ss.getSheetByName('L7 list');
-  assert.equal(sh.get('C9'), 'L-7 - Finishing');
+  assert.equal(sh.get('C9'), 'L-7精加工\n(L-7 Finishing)');
   assert.equal(sh.get('H9'), 'Machine');
 });
 

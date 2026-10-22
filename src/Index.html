@@ -34,7 +34,7 @@
     <section id="view-paste">
       <div class="card">
         <h1>Paste laporan dari grup WeChat</h1>
-        <p class="muted lead">Satu atau beberapa laporan sekaligus (format ①–⑨). Data yang kosong atau rusak tetap bisa diimpor; selnya ditandai kuning untuk dilengkapi nanti.</p>
+        <p class="muted lead">Satu atau beberapa laporan sekaligus (format ①–⑨). Data yang kosong atau rusak tetap bisa diimpor dan dilengkapi nanti. Machine, Deskripsi, dan Notes diterjemahkan ke format manajer: 中文 lalu (English).</p>
         <textarea id="src" class="mono" spellcheck="false" autocomplete="off"
           placeholder="①Tingkat saat ini: L1&#10;②Nama proyek: E245&#10;③Nama proses: Finishing&#10;④Waktu kejadian: 2026.10.20/18:05&#10;⑤Deskripsi: …&#10;⑥-1Jenis masalah: Mesin&#10;⑥-2Respond PIC: @nama&#10;⑦-1Status lini produksi: …&#10;⑦-2Status Penanganan: …&#10;⑧Waktu penutupan: 2026.10.20/18:23&#10;⑨Durasi dampak: 18 menit"></textarea>
 
@@ -66,7 +66,8 @@
           <li>Tanggal harus <b>tahun.bulan.tanggal</b> (<code>2026.10.20</code>, <code>2026-10-20</code>). <code>20/10/2026</code> tidak dibaca karena ambigu.</li>
           <li>Jam boleh <code>18:05</code> atau <code>18.05</code>. ⑨ boleh dengan atau tanpa "menit". Durasi selalu dihitung ulang dari ④ dan ⑧.</li>
           <li>Laporan yang lupa menulis ① tetap terbaca. Teks obrolan lain di luar laporan diabaikan.</li>
-          <li>Field yang gagal terbaca <b>tidak ditebak</b>: dikosongkan, diberi warna kuning, dan teks aslinya dicatat di kolom Notes.</li>
+          <li>Field yang gagal terbaca <b>tidak ditebak</b>: dikosongkan, dan teks aslinya dicatat di catatan sel kolom Notes.</li>
+          <li>Terjemahan: Indonesia → English → 中文 (Google Translate). Teks asli Indonesia disimpan sebagai catatan sel di Machine &amp; Deskripsi. Istilah tetap ada di <code>TERMS</code> (Config).</li>
         </ul>
       </details>
     </section>
@@ -75,7 +76,7 @@
     <section id="view-preview" class="hidden">
       <div class="card summary" id="summary"></div>
       <div class="toolbar">
-        <div class="legend"><span class="swatch"></span>Sel kuning di sheet = perlu dilengkapi manual. Root Cause &amp; Solution selalu kuning.</div>
+        <div class="legend">Tidak ada sel yang diwarnai. Root Cause (E) &amp; Solution (F) selalu dikosongkan untuk diisi manual.</div>
         <div class="toolbar-actions">
           <button type="button" class="link" id="sel-all">Pilih semua</button>
           <button type="button" class="link" id="sel-none">Kosongkan pilihan</button>

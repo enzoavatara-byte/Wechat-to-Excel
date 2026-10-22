@@ -15,7 +15,7 @@
     --ok: #157347; --ok-bg: #e3f4ea;
     --warn: #8a5a00; --warn-bg: #fff4d6;
     --ng: #b42318; --ng-bg: #fdeceb;
-    --cell: #FFF2CC; --cell-text: #6b5200;
+   
     --shadow: 0 1px 2px rgba(16, 24, 40, .05), 0 1px 3px rgba(16, 24, 40, .07);
     --radius: 12px;
   }
@@ -27,7 +27,7 @@
       --ok: #5dd39e; --ok-bg: #12301f;
       --warn: #ffcc66; --warn-bg: #33270b;
       --ng: #ff8a80; --ng-bg: #3a1614;
-      --cell: #4a3d10; --cell-text: #ffe39a;
+     
       --shadow: none;
     }
   }
@@ -135,7 +135,6 @@
 
   .toolbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin: 18px 2px 10px; }
   .legend { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12.5px; }
-  .swatch { width: 16px; height: 16px; border-radius: 4px; background: #FFF2CC; border: 1px solid #e6d28f; flex: none; }
   .toolbar-actions { display: flex; gap: 16px; font-size: 13px; }
 
   /* ---------- kartu laporan ---------- */
@@ -163,15 +162,24 @@
   .field.wide { grid-column: 1 / -1; }
   .field .hint { color: var(--faint); font-size: 12px; margin-top: 4px; }
   select.disc { max-width: 260px; }
-  select.disc.is-empty { background: var(--cell); color: var(--cell-text); border-color: transparent; font-weight: 600; }
-  .empty { display: inline-block; background: var(--cell); color: var(--cell-text); padding: 0 8px; border-radius: 4px; font-size: 12.5px; font-weight: 600; }
+  select.disc.is-empty { border-style: dashed; color: var(--muted); }
+  .empty { display: inline-block; border: 1px dashed var(--line-strong); color: var(--faint); padding: 0 8px; border-radius: 4px; font-size: 12.5px; }
+  .bi .zh, .bi .en, .bi .orig { display: block; }
+  .bi .zh { font-weight: 500; }
+  .bi .en { color: var(--muted); }
+  .bi .orig { color: var(--faint); font-size: 12px; margin-top: 4px; }
+  .notes-k .v { font-size: 12.5px; }
+  .lang-line { margin-top: 6px; color: var(--muted); }
+  .lang { display: inline-block; font-weight: 600; border-radius: 999px; padding: 1px 9px; margin-right: 4px; background: var(--chip); color: var(--muted); }
+  .lang.on { background: var(--primary-weak); color: var(--primary); }
+  .alert-actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
 
   .rec-foot { border-top: 1px dashed var(--line); padding: 10px 16px 12px 50px; display: grid; gap: 6px; }
   .warns { list-style: none; margin: 0; padding: 0; display: grid; gap: 5px; }
   .warns li { display: flex; gap: 8px; align-items: baseline; font-size: 13px; color: var(--warn); }
   .cells { display: flex; gap: 5px; align-items: center; flex-wrap: wrap; color: var(--faint); font-size: 12px; }
   .col-chip { font: 700 11px/18px ui-monospace, "SF Mono", Menlo, Consolas, monospace; min-width: 20px; text-align: center; border-radius: 4px;
-    background: var(--cell); color: var(--cell-text); padding: 0 4px; flex: none; }
+    background: var(--chip); color: var(--muted); padding: 0 4px; flex: none; }
   .col-chip.note { background: var(--chip); color: var(--muted); }
 
   /* ---------- action bar ---------- */
@@ -247,7 +255,7 @@
     <section id="view-paste">
       <div class="card">
         <h1>Paste laporan dari grup WeChat</h1>
-        <p class="muted lead">Satu atau beberapa laporan sekaligus (format ①–⑨). Data yang kosong atau rusak tetap bisa diimpor; selnya ditandai kuning untuk dilengkapi nanti.</p>
+        <p class="muted lead">Satu atau beberapa laporan sekaligus (format ①–⑨). Data yang kosong atau rusak tetap bisa diimpor dan dilengkapi nanti. Machine, Deskripsi, dan Notes diterjemahkan ke format manajer: 中文 lalu (English).</p>
         <textarea id="src" class="mono" spellcheck="false" autocomplete="off"
           placeholder="①Tingkat saat ini: L1&#10;②Nama proyek: E245&#10;③Nama proses: Finishing&#10;④Waktu kejadian: 2026.10.20/18:05&#10;⑤Deskripsi: …&#10;⑥-1Jenis masalah: Mesin&#10;⑥-2Respond PIC: @nama&#10;⑦-1Status lini produksi: …&#10;⑦-2Status Penanganan: …&#10;⑧Waktu penutupan: 2026.10.20/18:23&#10;⑨Durasi dampak: 18 menit"></textarea>
 
@@ -279,7 +287,8 @@
           <li>Tanggal harus <b>tahun.bulan.tanggal</b> (<code>2026.10.20</code>, <code>2026-10-20</code>). <code>20/10/2026</code> tidak dibaca karena ambigu.</li>
           <li>Jam boleh <code>18:05</code> atau <code>18.05</code>. ⑨ boleh dengan atau tanpa "menit". Durasi selalu dihitung ulang dari ④ dan ⑧.</li>
           <li>Laporan yang lupa menulis ① tetap terbaca. Teks obrolan lain di luar laporan diabaikan.</li>
-          <li>Field yang gagal terbaca <b>tidak ditebak</b>: dikosongkan, diberi warna kuning, dan teks aslinya dicatat di kolom Notes.</li>
+          <li>Field yang gagal terbaca <b>tidak ditebak</b>: dikosongkan, dan teks aslinya dicatat di catatan sel kolom Notes.</li>
+          <li>Terjemahan: Indonesia → English → 中文 (Google Translate). Teks asli Indonesia disimpan sebagai catatan sel di Machine &amp; Deskripsi. Istilah tetap ada di <code>TERMS</code> (Config).</li>
         </ul>
       </details>
     </section>
@@ -288,7 +297,7 @@
     <section id="view-preview" class="hidden">
       <div class="card summary" id="summary"></div>
       <div class="toolbar">
-        <div class="legend"><span class="swatch"></span>Sel kuning di sheet = perlu dilengkapi manual. Root Cause &amp; Solution selalu kuning.</div>
+        <div class="legend">Tidak ada sel yang diwarnai. Root Cause (E) &amp; Solution (F) selalu dikosongkan untuk diisi manual.</div>
         <div class="toolbar-actions">
           <button type="button" class="link" id="sel-all">Pilih semua</button>
           <button type="button" class="link" id="sel-none">Kosongkan pilihan</button>
@@ -353,10 +362,11 @@
     other: '',
     sel: {},         // id -> dicentang?
     disc: {},        // id -> Discipline pilihan
+    translate: true, // false setelah memilih "Lanjut tanpa terjemahan"
     newSheetFrom: '' // 'menu' (dialog sendiri) atau 'paste' (dari tautan "+ Sheet baru")
   };
 
-  // Pertanyaan untuk mentor per kolom kuning (Root Cause & Solution selalu ditanyakan).
+  // Pertanyaan untuk mentor per kolom kosong (Root Cause & Solution selalu ditanyakan).
   var QUESTIONS = {
     MACHINE: 'Proyek / proses (Machine)?',
     DESC: 'Deskripsi masalah?',
@@ -384,8 +394,11 @@
   }
   function cleanErr(e) { return String(e.message || e).replace(/^(Error|Exception):\s*/, ''); }
   function flash(msg, kind) {
-    $('flash').innerHTML = msg ? '<div class="alert ' + (kind || 'err') + '">' + esc(msg) + '</div>' : '';
-    if (msg) window.scrollTo(0, 0);
+    flashHtml(msg ? esc(msg) : '', kind);
+  }
+  function flashHtml(html, kind) {
+    $('flash').innerHTML = html ? '<div class="alert ' + (kind || 'err') + '">' + html + '</div>' : '';
+    if (html) window.scrollTo(0, 0);
   }
   function busy(btn, on, label) {
     if (on) { btn.dataset.label = btn.textContent; btn.textContent = label; btn.disabled = true; btn.classList.add('is-busy'); }
@@ -446,10 +459,15 @@
     var other = $('other').value;
     flash('');
     busy(btn, true, 'Memproses…');
-    call('previewWeChat', text, other).then(function (p) {
+    call('previewWeChat', text, other, { translate: state.translate }).then(function (p) {
       if (!p.records.length) {
         flash('Tidak ada laporan terdeteksi. Pastikan teks berisi simbol ①–⑨ dari format laporan WeChat.', 'warn');
         return;
+      }
+      if (p.translateError) {
+        flashHtml(esc(p.translateError) + '<div class="alert-actions">' +
+          '<button type="button" class="btn ghost sm" id="btn-retry-translate">Coba lagi</button>' +
+          '<button type="button" class="btn ghost sm" id="btn-no-translate">Lanjut tanpa terjemahan</button></div>', 'warn');
       }
       state.preview = p;
       state.text = text;
@@ -479,9 +497,13 @@
         ? '<span class="dest bad">' + esc(s.name) + ': ' + esc(s.error) + '</span>'
         : '<span class="dest"><b>' + esc(s.name) + '</b> · mulai baris ' + s.nextRow + '</span>';
     }).join('');
+    var lang = p.translated
+      ? '<span class="lang on">中文 + (English)</span> terjemahan mesin (Google Translate); teks asli disimpan di catatan sel'
+      : '<span class="lang">Bahasa Indonesia</span> tanpa terjemahan';
     $('summary').innerHTML =
       '<div class="sum-head"><div><div class="sum-big">' + recs.length + ' laporan terdeteksi</div>' +
-      '<div class="muted small">Urut dari jam kejadian paling awal. Centang yang mau diimpor.</div></div>' +
+      '<div class="muted small">Urut dari jam kejadian paling awal. Centang yang mau diimpor.</div>' +
+      '<div class="small lang-line">' + lang + '</div></div>' +
       '<div class="sum-dest">' + dest + '</div></div>' +
       '<div class="stats">' +
         stat('sel-count', 0, 'akan diimpor', 'primary') +
@@ -528,11 +550,12 @@
 
     var body =
       '<div class="rec-body">' +
-        field('Machine', r.machine) +
-        '<div class="field"><div class="k">Discipline</div><div class="v">' + disciplineSelect(r, can) + '</div></div>' +
-        field('Deskripsi', r.description, 'wide') +
-        field('PIC', r.pic) +
+        biField('Machine (C)', r.cells.C, r.translated && r.machine) +
+        '<div class="field"><div class="k">Discipline (H)</div><div class="v">' + disciplineSelect(r, can) + '</div></div>' +
+        biField('Deskripsi (D)', r.cells.D, r.translated && r.description, 'wide') +
+        field('PIC (I)', r.pic) +
         field('Level · Status', [r.level, r.lineStatus, r.handling].filter(Boolean).join(' · ')) +
+        (r.translated ? biField('Notes (K)', r.cells.K, '', 'wide notes-k') : '') +
       '</div>';
 
     var warns = r.warnings.length
@@ -542,7 +565,7 @@
         }).join('') + '</ul>'
       : '';
     var foot = '<div class="rec-foot">' + warns +
-      '<div class="cells">Sel kuning di sheet: ' + colChips(r.yellow) + '</div></div>';
+      '<div class="cells">Perlu dilengkapi manual: ' + colChips(r.empty) + '</div></div>';
 
     var cls = 'rec ' + (on ? 'is-on' : 'is-off') + (can ? '' : ' is-blocked');
     return '<article class="' + cls + '" data-id="' + r.id + '">' + head + body + foot + '</article>';
@@ -553,9 +576,19 @@
       (value ? esc(value) : empty()) + '</div></div>';
   }
 
+  /** "中文\n(English)" ditampilkan dua baris; `original` = teks asli Indonesia (kalau diterjemahkan). */
+  function biField(label, value, original, cls) {
+    var i = value ? value.indexOf('\n(') : -1;
+    var shown = !value ? empty()
+      : i === -1 ? esc(value)
+      : '<span class="zh">' + esc(value.slice(0, i)) + '</span><span class="en">' + esc(value.slice(i + 1)) + '</span>';
+    return '<div class="field ' + (cls || '') + '"><div class="k">' + esc(label) + '</div><div class="v bi">' + shown +
+      (original ? '<span class="orig">Asli: ' + esc(original) + '</span>' : '') + '</div></div>';
+  }
+
   function disciplineSelect(r, can) {
     var cur = state.disc[r.id] || '';
-    var opts = ['<option value="">— kosong (kuning) —</option>'].concat(state.init.disciplines.map(function (d) {
+    var opts = ['<option value="">— kosong —</option>'].concat(state.init.disciplines.map(function (d) {
       return '<option value="' + esc(d) + '"' + (d === cur ? ' selected' : '') + '>' + esc(d) + '</option>';
     }));
     var hint = r.discipline ? 'otomatis dari “' + r.type + '”'
@@ -572,12 +605,13 @@
 
   function updateCounts() {
     var n = picks().length, total = state.preview.records.length;
+    var blocked = !!state.preview.translateError; // impor dengan terjemahan pasti gagal lagi
     if ($('sel-count')) $('sel-count').textContent = n;
     $('act-note').textContent = n + ' dari ' + total + ' laporan dipilih';
     var btn = $('btn-import');
     if (!btn.classList.contains('is-busy')) {
-      btn.textContent = n ? 'Impor ' + n + ' laporan' : 'Belum ada yang dipilih';
-      btn.disabled = !n;
+      btn.textContent = blocked ? 'Terjemahan gagal' : (n ? 'Impor ' + n + ' laporan' : 'Belum ada yang dipilih');
+      btn.disabled = !n || blocked;
     }
   }
 
@@ -592,7 +626,7 @@
     var btn = $('btn-import');
     busy(btn, true, 'Menulis ke sheet…');
     $('btn-back').disabled = true;
-    call('importWeChat', state.text, state.other, list).then(function (res) {
+    call('importWeChat', state.text, state.other, list, { translate: state.translate }).then(function (res) {
       flash('');
       renderResult(res);
       show('result');
@@ -618,7 +652,7 @@
     var hero = '<div class="card hero' + (w.length ? '' : ' empty-result') + '">' +
       '<div class="hero-icon">' + (w.length ? '✓' : '!') + '</div>' +
       '<div class="grow"><h1>' + (w.length ? w.length + ' laporan ditulis' : 'Tidak ada yang ditulis') + '</h1>' +
-      '<p class="muted">' + (w.length ? esc(where) + '. Lengkapi sel kuning setelah tanya mentor.' : 'Lihat pesan di bawah.') + '</p></div>' +
+      '<p class="muted">' + (w.length ? esc(where) + '. Lengkapi kolom yang kosong setelah tanya mentor.' : 'Lihat pesan di bawah.') + '</p></div>' +
       '<a class="btn ghost" href="' + esc(res.url) + '" target="_blank" rel="noopener">Buka spreadsheet ↗</a></div>';
 
     var errors = res.errors.length
@@ -626,18 +660,18 @@
       : '';
 
     var table = w.length ? '<div class="card"><h2>Baris yang ditulis</h2><div class="table-wrap"><table>' +
-      '<thead><tr><th>No.</th><th>Sheet · baris</th><th>Waktu</th><th>Machine · Deskripsi</th><th>Sel kuning</th></tr></thead><tbody>' +
+      '<thead><tr><th>No.</th><th>Sheet · baris</th><th>Waktu</th><th>Machine · Deskripsi</th><th>Perlu dilengkapi</th></tr></thead><tbody>' +
       w.map(function (x) {
         return '<tr><td class="num">' + esc(x.no) + '</td>' +
           '<td class="nowrap"><a href="' + esc(rowUrl(res.url, x)) + '" target="_blank" rel="noopener">' + esc(x.sheet) + ' · ' + x.row + ' ↗</a></td>' +
           '<td class="nowrap">' + esc([x.date, x.start].filter(Boolean).join(' ')) + '</td>' +
           '<td>' + (x.machine ? esc(x.machine) : empty()) + '<div class="muted small clamp">' + esc(x.description) + '</div></td>' +
-          '<td><div class="chips">' + colChips(x.yellow) + '</div></td></tr>';
+          '<td><div class="chips">' + colChips(x.empty) + '</div></td></tr>';
       }).join('') + '</tbody></table></div></div>' : '';
 
     var mentor = w.length ? '<div class="card"><div class="card-row"><h2>Pertanyaan untuk mentor</h2>' +
       '<button type="button" class="btn ghost sm" id="btn-copy">Salin</button></div>' +
-      '<div class="muted small">Teks siap kirim untuk melengkapi sel kuning. Boleh diedit dulu.</div>' +
+      '<div class="muted small">Teks siap kirim untuk melengkapi kolom yang kosong. Boleh diedit dulu.</div>' +
       '<textarea id="mentor-text" class="mono">' + esc(mentorText(w)) + '</textarea></div>' : '';
 
     var actions = '<div class="end-actions">' +
@@ -654,7 +688,7 @@
       if (x.description) out.push('   Masalah: ' + x.description.replace(/\s*\n\s*/g, '; '));
       out.push('   - Root cause?');
       out.push('   - Solusi?');
-      x.yellow.forEach(function (y) {
+      x.empty.forEach(function (y) {
         var q = QUESTIONS[y.key];
         if (!q) return;
         if (y.key === 'DISCIPLINE' && x.type) q += ' (jenis dari operator: "' + x.type + '")';
@@ -741,6 +775,14 @@
   }
 
   // ---------- event ----------
+  $('flash').addEventListener('click', function (e) {
+    var id = e.target.id;
+    if (id !== 'btn-no-translate' && id !== 'btn-retry-translate') return;
+    if (id === 'btn-no-translate') state.translate = false;
+    $('btn-import').disabled = true;
+    $('btn-import').textContent = 'Memproses…';
+    doPreview();
+  });
   $('btn-new-sheet').addEventListener('click', function () { openNewSheet('paste'); });
   $('ns-form').addEventListener('submit', doCreateSheet);
   $('ns-cancel').addEventListener('click', closeNewSheet);
@@ -781,6 +823,7 @@
     else if (id === 'btn-close') google.script.host.close();
     else if (id === 'btn-again') {
       state.preview = null;
+      state.translate = true;
       $('src').value = '';
       show('paste');
       $('src').focus();

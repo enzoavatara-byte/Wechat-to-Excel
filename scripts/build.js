@@ -1,6 +1,6 @@
 /**
  * Gabungkan src/ menjadi file siap-paste di dist/:
- *   dist/Code.gs          = Config + Parser + Sheet + Template + Ui
+ *   dist/Code.gs          = Config + Parser + Translate + Sheet + Template + Ui
  *   dist/Index.html       = Index dengan Styles & App sudah di-inline
  *   dist/appsscript.json  = salinan manifest
  * Jalankan: npm run build. Sumber kebenaran tetap src/; jangan edit dist/ langsung.
@@ -12,7 +12,7 @@ const path = require('path');
 const ROOT = path.join(__dirname, '..');
 const SRC = path.join(ROOT, 'src');
 const DIST = path.join(ROOT, 'dist');
-const GS_FILES = ['Config.gs', 'Parser.gs', 'Sheet.gs', 'Template.gs', 'Ui.gs'];
+const GS_FILES = ['Config.gs', 'Parser.gs', 'Translate.gs', 'Sheet.gs', 'Template.gs', 'Ui.gs'];
 
 const read = (f) => fs.readFileSync(path.join(SRC, f), 'utf8').replace(/\r\n/g, '\n');
 

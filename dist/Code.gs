@@ -22,8 +22,8 @@ var COL = {
   NO: 2,          // B  No.序号
   MACHINE: 3,     // C  Machine
   DESC: 4,        // D  Issue Description
-  ROOT_CAUSE: 5,  // E  Root Cause      -> selalu kosong + kuning (isi manual)
-  SOLUTION: 6,    // F  Solution        -> selalu kosong + kuning (isi manual)
+  ROOT_CAUSE: 5,  // E  Root Cause      -> selalu kosong (isi manual)
+  SOLUTION: 6,    // F  Solution        -> selalu kosong (isi manual)
   END_TIME: 7,    // G  End Time
   DISCIPLINE: 8,  // H  Discipline (dropdown)
   PIC: 9,         // I  Responsibility
@@ -46,7 +46,7 @@ var DISCIPLINES = ['Machine', 'Operation', 'Product Item', 'MES'];
 
 // Jenis masalah (⑥-1) -> Discipline (H).
 // Kunci: huruf kecil, tanpa spasi/strip/garis bawah ("Change over" -> "changeover").
-// Jenis yang tidak ada di sini: H dikosongkan + kuning + peringatan. Tambahkan HANYA yang sudah pasti.
+// Jenis yang tidak ada di sini: H dikosongkan + peringatan. Tambahkan HANYA yang sudah pasti.
 var DISCIPLINE_MAP = {
   'mesin': 'Machine',
   'machine': 'Machine',
@@ -60,9 +60,31 @@ var DISCIPLINE_MAP = {
 // Tetap tampil di pratinjau supaya laporan yang salah label bisa dicentang manual.
 var SKIP_TYPES = ['changeover'];
 
-var COLOR = {
-  YELLOW: '#FFF2CC'  // sel yang harus dilengkapi manual
+// ---------- Terjemahan (Translate.gs) ----------
+
+// true: C, D, K ditulis "中文\n(English)" seperti sheet manajer. false: Bahasa Indonesia apa adanya.
+var TRANSLATE = true;
+
+// Istilah tetap: dipakai apa adanya, tidak lewat terjemahan mesin. [中文, English]
+// Kunci: huruf kecil, tanpa spasi/strip/titik ("Mesin pulih" -> "mesinpulih").
+// Tambahkan nama proses (③) setelah dicek ke mentor/manajer; sampai itu, proses diterjemahkan mesin
+// dan diberi peringatan.
+var TERMS = {
+  'changeover': ['换型', 'Changeover'],          // istilah file manajer: "频繁换型 (Frequent changeovers)"
+  'preassy': ['预装', 'Pre-assembly'],           // file manajer: "箱体预装工位 (Enclosure Pre-assembly Station)"
+  'mesin': ['设备', 'Machine'],
+  'mesinpulih': ['设备已恢复', 'Machine recovered'],
+  'mesinpulihkembali': ['设备已恢复', 'Machine recovered'],
+  'selesaipenanganan': ['处理完成', 'Handling completed'],
+  'sudahpenanganan': ['已处理', 'Handled']
+  // 'finishing': ['…', 'Finishing'],
+  // 'pressmodul': ['…', 'Module Press'],
 };
+
+// Ganti pilihan kata mesin dengan istilah yang dipakai di file manajer.
+var ZH_FIXES = [
+  ['模块', '模组']  // module: file manajer selalu memakai 模组
+];
 
 var FORMAT = {
   END_TIME: 'h:mm',
@@ -78,7 +100,7 @@ var LOCK_TIMEOUT_MS = 10000;
  *
  * Fungsi MURNI: tidak memakai SpreadsheetApp/Utilities, supaya bisa dites di Node
  * (test/parser.test.js). Aturan utamanya: JANGAN mengarang data. Field yang gagal
- * terbaca dikosongkan, ditandai di `missing` (kunci = nama kolom di COL -> sel kuning) dan dicatat di `warnings`
+ * terbaca dikosongkan, ditandai di `missing` (kunci = nama kolom di COL) dan dicatat di `warnings`
  * (-> kolom Notes), lengkap dengan teks aslinya supaya tidak ada yang hilang.
  *
  * Parsing dikunci pada SIMBOL (①..⑨, ⑥-1/⑥-2, ⑦-1/⑦-2), bukan teks labelnya.
@@ -398,23 +420,29 @@ function applyDisciplineChoice_(rec, choice) {
   return rec;
 }
 
-/** Nilai per kolom (kunci = nama di COL) + daftar kolom yang diberi latar kuning. */
+/**
+ * Nilai per kolom (kunci = nama di COL), kolom yang masih kosong (dilengkapi manual), dan catatan sel.
+ * Kalau rec.tr ada (sudah diterjemahkan, lihat Translate.gs): C, D, K jadi "中文\n(English)" dan
+ * teks asli + peringatan pindah ke catatan sel. Tanpa terjemahan: Bahasa Indonesia apa adanya.
+ */
 function buildRow_(rec) {
-  var yellow = ['ROOT_CAUSE', 'SOLUTION'];
+  var empty = ['ROOT_CAUSE', 'SOLUTION'];
   ['MACHINE', 'DESC', 'END_TIME', 'DISCIPLINE', 'PIC', 'DATE'].forEach(function (k) {
-    if (rec.missing[k]) yellow.push(k);
+    if (rec.missing[k]) empty.push(k);
   });
+  var tr = !!rec.tr;
   return {
     values: {
-      MACHINE: rec.machine,
-      DESC: rec.description,
+      MACHINE: tr ? machineBi_(rec) : rec.machine,
+      DESC: tr ? descBi_(rec) : rec.description,
       END_TIME: rec.end.time ? timeSerial_(rec.end.time) : '',
       DISCIPLINE: rec.discipline,
       PIC: rec.pic,
       DATE: rec.start.date ? dateSerial_(rec.start.date) : '',
-      NOTES: buildNotes_(rec)
+      NOTES: tr ? notesBi_(rec) : buildNotes_(rec)
     },
-    yellow: yellow
+    notes: tr ? cellNotes_(rec) : {},
+    empty: empty
   };
 }
 
@@ -485,6 +513,228 @@ function dateSerial_(d) {
 /** Pecahan hari: 18:23 -> 0.7659… (format sel h:mm). */
 function timeSerial_(t) {
   return (t.h * 60 + t.mi) / 1440;
+}
+
+// ======================= Translate.gs =======================
+
+/**
+ * Terjemahan ke format sheet manajer: "中文\n(English)",
+ * mis. "E245模组入箱\n(E245 module installation into enclosure)".
+ *
+ * Mesin: LanguageApp (Google Translate bawaan Apps Script; gratis, ±5.000 panggilan/hari untuk akun Gmail).
+ * Alur Indonesia -> Inggris -> Mandarin, supaya kedua bahasa mengatakan hal yang sama.
+ * Istilah di TERMS (Config) tidak lewat mesin. Semua teks satu impor dikirim sekaligus (satu panggilan
+ * per bahasa). Teks asli Bahasa Indonesia disimpan sebagai catatan sel, jadi tidak hilang kalau
+ * terjemahan mesin keliru, dan tetap dipakai untuk deteksi duplikat.
+ */
+var NOTE_PREFIX = 'Asli (ID): ';
+var TRANSLATE_CHUNK_CHARS = 4000;
+
+function wantTranslate_(opts) {
+  return TRANSLATE && !(opts && opts.translate === false);
+}
+
+/**
+ * Isi rec.tr = { process, desc, type, lineStatus, handling }, masing-masing { zh, en, mt } atau null.
+ * `translateFn(texts, from, to)` bisa diganti (test). Kalau penerjemah gagal, error dilempar dan
+ * tidak ada record yang berubah.
+ */
+function translateRecords_(recs, translateFn) {
+  var fn = translateFn || translateTexts_;
+  var fields = ['process', 'description', 'type', 'lineStatus', 'handling'];
+  var index = {};
+  var sources = [];
+  recs.forEach(function (r) {
+    fields.forEach(function (f) {
+      var s = r[f];
+      if (s && !TERMS.hasOwnProperty(typeKey_(s)) && !index.hasOwnProperty(s)) {
+        index[s] = sources.length;
+        sources.push(s);
+      }
+    });
+  });
+  var en = sources.length ? fn(sources, 'id', 'en') : [];
+  var zh = en.length ? fn(en, 'en', 'zh-CN').map(fixZh_) : [];
+  var tr = function (s) {
+    if (!s) return null;
+    var t = TERMS[typeKey_(s)];
+    if (t) return { zh: t[0], en: t[1], mt: false };
+    return { zh: zh[index[s]], en: en[index[s]], mt: true };
+  };
+  recs.forEach(function (r) {
+    r.tr = { process: tr(r.process), desc: tr(r.description), type: tr(r.type), lineStatus: tr(r.lineStatus), handling: tr(r.handling) };
+    if (r.tr.process && r.tr.process.mt) {
+      warn_(r, null, '③ "' + r.process + '" diterjemahkan mesin: ' + r.tr.process.zh + ' / ' + r.tr.process.en +
+        '. Kalau sudah benar, tambahkan ke TERMS di Config supaya konsisten.');
+    }
+  });
+  return recs;
+}
+
+/** Istilah file manajer menang atas pilihan kata mesin (mis. 模块 -> 模组). */
+function fixZh_(s) {
+  return ZH_FIXES.reduce(function (acc, f) { return acc.split(f[0]).join(f[1]); }, String(s));
+}
+
+/**
+ * Terjemahkan array teks (boleh multi-baris) dengan sesedikit mungkin panggilan LanguageApp:
+ * semua baris digabung per potongan ±4.000 karakter. Kalau jumlah baris hasil tidak sama
+ * (penerjemah menggabung/memecah baris), potongan itu diulang per baris supaya tidak salah pasang.
+ */
+function translateTexts_(texts, from, to) {
+  var lines = [];
+  var counts = [];
+  texts.forEach(function (t) {
+    var ls = String(t).split('\n');
+    counts.push(ls.length);
+    Array.prototype.push.apply(lines, ls);
+  });
+  var out = [];
+  chunkLines_(lines, TRANSLATE_CHUNK_CHARS).forEach(function (chunk) {
+    var res = callTranslate_(chunk.join('\n'), from, to).split('\n');
+    if (res.length !== chunk.length) res = chunk.map(function (l) { return callTranslate_(l, from, to); });
+    Array.prototype.push.apply(out, res);
+  });
+  var result = [];
+  var k = 0;
+  counts.forEach(function (n) {
+    result.push(out.slice(k, k + n).map(function (l) { return l.trim(); }).join('\n'));
+    k += n;
+  });
+  return result;
+}
+
+function chunkLines_(lines, max) {
+  var chunks = [];
+  var cur = [];
+  var size = 0;
+  lines.forEach(function (l) {
+    if (cur.length && size + l.length + 1 > max) {
+      chunks.push(cur);
+      cur = [];
+      size = 0;
+    }
+    cur.push(l);
+    size += l.length + 1;
+  });
+  if (cur.length) chunks.push(cur);
+  return chunks;
+}
+
+function callTranslate_(text, from, to) {
+  var out = LanguageApp.translate(text, from, to, { contentType: 'text' });
+  return String(out).replace(/&(amp|lt|gt|quot|#39);/g, function (m, e) {
+    return { amp: '&', lt: '<', gt: '>', quot: '"', '#39': "'" }[e];
+  });
+}
+
+// ---------- Format sel ----------
+
+function bi_(zh, en) {
+  return zh + '\n(' + en + ')';
+}
+
+/** C: "E245精加工\n(E245 Finishing)", seperti "E245模组入箱\n(E245 module installation into enclosure)". */
+function machineBi_(rec) {
+  var t = rec.tr && rec.tr.process;
+  if (!t) return rec.machine; // tanpa ③ tidak ada yang diterjemahkan (mis. hanya "E245")
+  var p = rec.project;
+  var zh = p ? p + (/^[A-Za-z0-9]/.test(t.zh) ? ' ' : '') + t.zh : t.zh;
+  return bi_(zh, [p, t.en].filter(Boolean).join(' '));
+}
+
+function descBi_(rec) {
+  var t = rec.tr && rec.tr.desc;
+  return t ? bi_(t.zh, t.en) : rec.description;
+}
+
+/** K: info laporan dalam dua bahasa. Peringatan internal ada di catatan sel, bukan di sini. */
+function notesBi_(rec) {
+  var t = rec.tr || {};
+  var pick = function (x, lang) { return x ? x[lang] : '-'; };
+  var d = rec.duration !== null ? rec.duration : rec.reportedDuration;
+  var unverified = rec.duration === null && rec.reportedDuration !== null;
+  var start = fmtTime_(rec.start.time) || '-';
+  var zh = [
+    '等级：' + (rec.level || '-'),
+    '开始：' + start,
+    '影响时长：' + (d !== null ? d + '分钟' + (unverified ? '（未核实）' : '') : '-'),
+    '类型：' + pick(t.type, 'zh'),
+    '产线状态：' + pick(t.lineStatus, 'zh'),
+    '处理状态：' + pick(t.handling, 'zh')
+  ];
+  var en = [
+    'Level: ' + (rec.level || '-'),
+    'Start: ' + start,
+    'Downtime: ' + (d !== null ? d + ' min' + (unverified ? ' (unverified)' : '') : '-'),
+    'Type: ' + pick(t.type, 'en'),
+    'Line status: ' + pick(t.lineStatus, 'en'),
+    'Handling: ' + pick(t.handling, 'en')
+  ];
+  if (rec.start.date && rec.end.date && fmtDate_(rec.start.date) !== fmtDate_(rec.end.date)) {
+    var end = fmtDate_(rec.end.date) + (rec.end.time ? ' ' + fmtTime_(rec.end.time) : '');
+    zh.push('结束：' + end);
+    en.push('End: ' + end);
+  }
+  return bi_(zh.join('；'), en.join('; '));
+}
+
+/** Catatan sel (muncul saat kursor di atas sel): teks asli + peringatan. */
+function cellNotes_(rec) {
+  var k = [NOTE_PREFIX + 'Level: ' + (rec.level || '-') + ' | Jenis: ' + (rec.type || '-') +
+    ' | Lini: ' + (rec.lineStatus || '-') + ' | Penanganan: ' + (rec.handling || '-')];
+  if (rec.disciplineManual) k.push('Discipline dipilih manual');
+  rec.warnings.forEach(function (w) { k.push('⚠ ' + w.msg); });
+  return {
+    MACHINE: rec.machine ? NOTE_PREFIX + rec.machine : '',
+    DESC: rec.description ? NOTE_PREFIX + rec.description : '',
+    NOTES: k.join('\n')
+  };
+}
+
+/** Teks asli dari catatan "Asli (ID): …" di kolom C/D, atau null. */
+function originalFromNote_(note) {
+  var s = String(note || '');
+  return s.indexOf(NOTE_PREFIX) === 0 ? s.slice(NOTE_PREFIX.length) : null;
+}
+
+// ---------- Menu: terjemahkan sel terpilih ----------
+
+/**
+ * Untuk teks yang diketik manual (mis. Root Cause/Solution setelah tanya mentor): sel terpilih
+ * diubah ke "中文\n(English)", teks asli disimpan di catatan sel. Sel kosong, angka/tanggal, rumus,
+ * dan sel yang sudah berisi huruf Mandarin dilewati.
+ */
+function translateSelection() {
+  var ui = SpreadsheetApp.getUi();
+  var range = SpreadsheetApp.getActiveRange();
+  var msg = range ? translateRange_(range).message : 'Pilih dulu sel yang mau diterjemahkan.';
+  ui.alert(APP_NAME, msg, ui.ButtonSet.OK);
+}
+
+function translateRange_(range) {
+  var max = 300;
+  if (range.getNumRows() * range.getNumColumns() > max) {
+    return { count: 0, message: 'Terlalu banyak sel dipilih (maks ' + max + ').' };
+  }
+  var vals = range.getValues();
+  var formulas = range.getFormulas();
+  var targets = [];
+  vals.forEach(function (row, i) {
+    row.forEach(function (v, j) {
+      if (typeof v !== 'string' || !v.trim() || formulas[i][j] || /[一-鿿]/.test(v)) return;
+      targets.push({ i: i, j: j, text: cleanLines_(v).join('\n') });
+    });
+  });
+  if (!targets.length) {
+    return { count: 0, message: 'Tidak ada teks yang perlu diterjemahkan (sel kosong, angka, rumus, atau yang sudah berbahasa Mandarin dilewati).' };
+  }
+  var en = translateTexts_(targets.map(function (t) { return t.text; }), 'id', 'en');
+  var zh = translateTexts_(en, 'en', 'zh-CN').map(fixZh_);
+  targets.forEach(function (t, k) {
+    range.getCell(t.i + 1, t.j + 1).setValue(asText_(bi_(zh[k], en[k]))).setNote(NOTE_PREFIX + t.text);
+  });
+  return { count: targets.length, message: targets.length + ' sel diterjemahkan ke 中文 + (English). Teks asli disimpan di catatan sel.' };
 }
 
 // ======================= Sheet.gs =======================
@@ -601,7 +851,9 @@ function asText_(v) {
 /**
  * Tulis satu record ke baris `row`.
  * - B hanya diisi kalau masih kosong (nomor yang sudah ada tidak diubah).
- * - E & F (Root Cause, Solution) tidak pernah diisi, hanya diberi latar kuning.
+ * - E & F (Root Cause, Solution) tidak pernah diisi. Tidak ada sel yang diwarnai; latar C:K
+ *   dikembalikan polos (sisa warna dari impor lama ikut hilang).
+ * - Catatan sel C, D, K diisi teks asli + peringatan (kalau diterjemahkan), selain itu dikosongkan.
  * - G dan J ditulis sebagai nomor seri + format sel, bukan objek Date,
  *   jadi hasilnya tidak bergeser walau timezone script ≠ timezone spreadsheet.
  */
@@ -627,7 +879,10 @@ function writeRecord(sh, row, rec) {
   });
   sh.getRange(row, COL.END_TIME).setNumberFormat(FORMAT.END_TIME);
   sh.getRange(row, COL.DATE).setNumberFormat(FORMAT.DATE);
-  sh.getRangeList(out.yellow.map(function (k) { return colLetter_(COL[k]) + row; })).setBackground(COLOR.YELLOW);
+  var notes = [];
+  for (var c = COL.MACHINE; c <= COL.NOTES; c++) notes.push('');
+  Object.keys(out.notes).forEach(function (k) { notes[COL[k] - COL.MACHINE] = out.notes[k]; });
+  sh.getRange(row, COL.MACHINE, 1, notes.length).setNotes([notes]).setBackground(null);
   return { row: row, no: no };
 }
 
@@ -650,18 +905,24 @@ function dropdownValues_(sh) {
 
 // ---------- Duplikat ----------
 
-/** Kunci (Machine|Deskripsi|End Time|Date seperti tampil di sheet) -> nomor baris. */
+/**
+ * Kunci (Machine|Deskripsi|End Time|Date seperti tampil di sheet) -> nomor baris.
+ * Untuk C/D yang sudah diterjemahkan, dipakai teks asli dari catatan sel ("Asli (ID): …").
+ */
 function existingKeys_(sh) {
   var keys = {};
   var last = sh.getLastRow();
   if (last < ROW.DATA_START) return keys;
   var first = Math.min(COL.MACHINE, COL.DESC, COL.END_TIME, COL.DATE);
   var width = Math.max(COL.MACHINE, COL.DESC, COL.END_TIME, COL.DATE) - first + 1;
-  var vals = sh.getRange(ROW.DATA_START, first, last - ROW.DATA_START + 1, width).getDisplayValues();
+  var range = sh.getRange(ROW.DATA_START, first, last - ROW.DATA_START + 1, width);
+  var vals = range.getDisplayValues();
+  var notes = range.getNotes();
   vals.forEach(function (v, i) {
     var c = v[COL.MACHINE - first], d = v[COL.DESC - first];
     if (isEmpty_(c) && isEmpty_(d)) return;
-    var key = recordKey_(c, d, v[COL.END_TIME - first], v[COL.DATE - first]);
+    var orig = function (col, shown) { return originalFromNote_(notes[i][col - first]) || shown; };
+    var key = recordKey_(orig(COL.MACHINE, c), orig(COL.DESC, d), v[COL.END_TIME - first], v[COL.DATE - first]);
     if (!keys.hasOwnProperty(key)) keys[key] = ROW.DATA_START + i;
   });
   return keys;
@@ -672,8 +933,10 @@ function existingKeys_(sh) {
 /**
  * Pratinjau tanpa menulis apa pun. `include` = default centang di UI:
  * tidak dicentang kalau jenisnya di SKIP_TYPES, duplikat, atau tidak bisa ditulis.
+ * opts.translate === false: tanpa terjemahan. Kalau terjemahan gagal, record tetap tampil
+ * (tanpa terjemahan) dan `translateError` diisi; UI menawarkan lanjut tanpa terjemahan.
  */
-function previewWeChat(text, otherSheet) {
+function previewWeChat(text, otherSheet, opts) {
   var ss = ss_();
   var other = issueSheet_(ss, otherSheet).getName();
   var recs = parseReports(text);
@@ -688,7 +951,17 @@ function previewWeChat(text, otherSheet) {
       r.duplicateOf = { where: 'sheet', sheet: name, row: info[name].keys[r.key] };
     }
   });
+  var translateError = '';
+  if (wantTranslate_(opts)) {
+    try {
+      translateRecords_(recs.filter(function (r) { return r.writable; }));
+    } catch (e) {
+      translateError = 'Terjemahan gagal: ' + (e.message || e);
+    }
+  }
   return {
+    translated: wantTranslate_(opts) && !translateError,
+    translateError: translateError,
     records: recs.map(toView_),
     sheets: Object.keys(info).map(function (n) {
       return { name: n, nextRow: info[n].nextRow, error: info[n].error };
@@ -706,8 +979,9 @@ function sheetInfo_(ss, name) {
   return { error: '', nextRow: findNextRow(sh), keys: existingKeys_(sh) };
 }
 
-/** Record -> objek polos untuk UI (label sudah diformat). */
+/** Record -> objek polos untuk UI (label sudah diformat, `cells` = isi sel yang akan ditulis). */
 function toView_(r) {
+  var row = buildRow_(r);
   return {
     id: r.id,
     sheet: r.sheet || '',
@@ -729,7 +1003,9 @@ function toView_(r) {
     skip: r.skip,
     writable: r.writable,
     duplicateOf: r.duplicateOf || null,
-    yellow: buildRow_(r).yellow.map(function (k) { return { key: k, col: colLetter_(COL[k]) }; }),
+    translated: !!r.tr,
+    cells: { C: row.values.MACHINE, D: row.values.DESC, K: row.values.NOTES },
+    empty: row.empty.map(function (k) { return { key: k, col: colLetter_(COL[k]) }; }),
     warnings: r.warnings.map(function (w) { return { col: w.col ? colLetter_(COL[w.col]) : '', msg: w.msg }; }),
     include: r.writable && !r.sheetError && !r.skip && !r.duplicateOf
   };
@@ -738,8 +1014,9 @@ function toView_(r) {
 /**
  * Tulis laporan yang dipilih. Teks di-parse ulang di server (sumber kebenaran tetap teks
  * aslinya); `picks` = [{ id, discipline }] dari pratinjau. Ditulis urut jam kejadian.
+ * Terjemahan dikerjakan SEBELUM menulis: kalau gagal, tidak ada satu baris pun yang ditulis.
  */
-function importWeChat(text, otherSheet, picks) {
+function importWeChat(text, otherSheet, picks, opts) {
   var lock = LockService.getScriptLock();
   if (!lock.tryLock(LOCK_TIMEOUT_MS)) {
     throw new Error('Masih ada impor lain yang berjalan. Coba lagi beberapa detik.');
@@ -753,10 +1030,16 @@ function importWeChat(text, otherSheet, picks) {
     var nextFrom = {};
     var written = [];
     var errors = [];
-    parseReports(text).forEach(function (rec) {
-      var p = chosen[rec.id];
-      if (!p) return;
-      applyDisciplineChoice_(rec, p.discipline);
+    var recs = parseReports(text).filter(function (rec) { return chosen.hasOwnProperty(rec.id); });
+    recs.forEach(function (rec) { applyDisciplineChoice_(rec, chosen[rec.id].discipline); });
+    if (wantTranslate_(opts)) {
+      try {
+        translateRecords_(recs.filter(function (r) { return r.writable; }));
+      } catch (e) {
+        throw new Error('Terjemahan gagal, tidak ada yang ditulis: ' + (e.message || e) + '. Coba lagi, atau lanjut tanpa terjemahan.');
+      }
+    }
+    recs.forEach(function (rec) {
       var label = (fmtTime_(rec.start.time) || '??:??') + ' ' + (rec.machine || rec.description);
       if (!rec.writable) {
         errors.push(label + ': Machine & Deskripsi kosong, tidak ditulis.');
@@ -976,6 +1259,7 @@ function onOpen() {
     .createMenu('WeChat Import')
     .addItem('Import laporan WeChat…', 'showImportDialog')
     .addItem('Buat sheet baru (format manajer)…', 'showNewSheetDialog')
+    .addItem('Terjemahkan sel terpilih (中文 + English)', 'translateSelection')
     .addSeparator()
     .addItem('Cek setup', 'setup')
     .addToUi();
@@ -1000,6 +1284,15 @@ function setup() {
     ok('Timezone spreadsheet diubah: ' + oldTz + ' → ' + tz);
   } else {
     ok('Timezone spreadsheet: ' + tz);
+  }
+
+  if (TRANSLATE) {
+    try {
+      var en = translateTexts_(['mesin macet'], 'id', 'en');
+      ok('Terjemahan aktif: "mesin macet" → "' + fixZh_(translateTexts_(en, 'en', 'zh-CN')[0]) + '" (' + en[0] + ')');
+    } catch (e) {
+      bad('Terjemahan gagal: ' + (e.message || e) + '. Impor masih bisa tanpa terjemahan.');
+    }
   }
 
   var sheets = issueSheetNames_(ss);

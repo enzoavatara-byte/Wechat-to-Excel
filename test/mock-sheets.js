@@ -65,6 +65,13 @@ class MockRange {
   setNumberFormat(f) { this.each((r, c) => { this.sheet.cell(r, c).f = f; }); return this; }
   setBackground(bg) { this.each((r, c) => { this.sheet.cell(r, c).bg = bg; }); return this; }
   getDataValidation() { return this.sheet.validations.get(this.row + ',' + this.col) || null; }
+  getNotes() { return this.grid((x) => x.note || ''); }
+  setNotes(n) { this.each((r, c, i, j) => { this.sheet.cell(r, c).note = n[i][j]; }); return this; }
+  setNote(n) { return this.setNotes([[n]]); }
+  getFormulas() { return this.grid((x) => (typeof x.v === 'string' && x.v[0] === '=' ? x.v : '')); }
+  getNumRows() { return this.nr; }
+  getNumColumns() { return this.nc; }
+  getCell(i, j) { return new MockRange(this.sheet, this.row + i - 1, this.col + j - 1); }
   setDataValidation(rule) { this.each((r, c) => { this.sheet.validations.set(r + ',' + c, rule); }); return this; }
   setFormula(f) { return this.setValue(f); }
   style(key, v) { this.each((r, c) => { const x = this.sheet.cell(r, c); x.s = Object.assign({}, x.s, { [key]: v }); }); return this; }
@@ -104,6 +111,7 @@ class MockSheet {
   bg(a1) { const [r, c] = parseA1(a1); return this.cell(r, c).bg; }
   fmt(a1) { const [r, c] = parseA1(a1); return this.cell(r, c).f; }
   styleOf(a1) { const [r, c] = parseA1(a1); return this.cell(r, c).s || {}; }
+  note(a1) { const [r, c] = parseA1(a1); return this.cell(r, c).note; }
   set(a1, v) { const [r, c] = parseA1(a1); this.cell(r, c).v = v; return this; }
   getName() { return this.name; }
   getSheetId() { return this.id; }
@@ -154,10 +162,48 @@ class MockSpreadsheet {
   deleteSheet(sh) { this.sheets = this.sheets.filter((s) => s !== sh); }
 }
 
+// Penerjemah palsu pengganti LanguageApp: kamus kecil untuk teks fixture, selain itu diberi penanda
+// ("EN:"/"中:") supaya hasil bisa dicek. Menjaga jumlah baris seperti Google Translate.
+const DICT = {
+  en: {
+    'Finishing': 'Finishing', 'finishing': 'finishing', 'Press Modul': 'Module Press',
+    'pergantian lem kotak B Upper modul': 'glue replacement for box B upper module',
+    'pergantian lem kotak A': 'glue replacement for box A',
+    'mesin lem upper pack stuck saat peroses pengeleman': 'upper pack gluing machine stuck during the gluing process',
+    'Posisi nozzle tidak masuk pada pallet': 'Nozzle position does not enter the pallet',
+    'mesin lem upper pack stuck': 'upper pack gluing machine stuck',
+    'mesin macet': 'machine jammed'
+  },
+  'zh-CN': {
+    'Finishing': '精加工', 'finishing': '精加工', 'Module Press': '模块压装',
+    'glue replacement for box B upper module': 'B盒上部模块换胶',
+    'Nozzle position does not enter the pallet': '喷嘴位置未进入托盘',
+    'upper pack gluing machine stuck': '上包涂胶机卡住',
+    'machine jammed': '机器卡住'
+  }
+};
+
+function fakeLanguageApp() {
+  const app = {
+    calls: [],
+    fail: false,
+    mergeLines: false, // simulasi penerjemah yang menggabung baris
+    translate(text, from, to) {
+      app.calls.push({ text, from, to });
+      if (app.fail) throw new Error('Service invoked too many times for one day: translate.');
+      const out = String(text).split('\n').map((l) => (DICT[to] && DICT[to][l]) || (to === 'en' ? 'EN:' + l : '中:' + l));
+      return app.mergeLines && out.length > 1 ? out.join(' ') : out.join('\n');
+    }
+  };
+  return app;
+}
+
 function services(ss) {
   return {
+    LanguageApp: fakeLanguageApp(),
     SpreadsheetApp: {
       getActiveSpreadsheet: () => ss,
+      getActiveRange: () => ss.activeRange || null,
       flush() {},
       DataValidationCriteria: { VALUE_IN_LIST: 'VALUE_IN_LIST', VALUE_IN_RANGE: 'VALUE_IN_RANGE' },
       newDataValidation() {

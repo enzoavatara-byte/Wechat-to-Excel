@@ -110,7 +110,9 @@ function asText_(v) {
 /**
  * Tulis satu record ke baris `row`.
  * - B hanya diisi kalau masih kosong (nomor yang sudah ada tidak diubah).
- * - E & F (Root Cause, Solution) tidak pernah diisi, hanya diberi latar kuning.
+ * - E & F (Root Cause, Solution) tidak pernah diisi. Tidak ada sel yang diwarnai; latar C:K
+ *   dikembalikan polos (sisa warna dari impor lama ikut hilang).
+ * - Catatan sel C, D, K diisi teks asli + peringatan (kalau diterjemahkan), selain itu dikosongkan.
  * - G dan J ditulis sebagai nomor seri + format sel, bukan objek Date,
  *   jadi hasilnya tidak bergeser walau timezone script ≠ timezone spreadsheet.
  */
@@ -136,7 +138,10 @@ function writeRecord(sh, row, rec) {
   });
   sh.getRange(row, COL.END_TIME).setNumberFormat(FORMAT.END_TIME);
   sh.getRange(row, COL.DATE).setNumberFormat(FORMAT.DATE);
-  sh.getRangeList(out.yellow.map(function (k) { return colLetter_(COL[k]) + row; })).setBackground(COLOR.YELLOW);
+  var notes = [];
+  for (var c = COL.MACHINE; c <= COL.NOTES; c++) notes.push('');
+  Object.keys(out.notes).forEach(function (k) { notes[COL[k] - COL.MACHINE] = out.notes[k]; });
+  sh.getRange(row, COL.MACHINE, 1, notes.length).setNotes([notes]).setBackground(null);
   return { row: row, no: no };
 }
 
@@ -159,18 +164,24 @@ function dropdownValues_(sh) {
 
 // ---------- Duplikat ----------
 
-/** Kunci (Machine|Deskripsi|End Time|Date seperti tampil di sheet) -> nomor baris. */
+/**
+ * Kunci (Machine|Deskripsi|End Time|Date seperti tampil di sheet) -> nomor baris.
+ * Untuk C/D yang sudah diterjemahkan, dipakai teks asli dari catatan sel ("Asli (ID): …").
+ */
 function existingKeys_(sh) {
   var keys = {};
   var last = sh.getLastRow();
   if (last < ROW.DATA_START) return keys;
   var first = Math.min(COL.MACHINE, COL.DESC, COL.END_TIME, COL.DATE);
   var width = Math.max(COL.MACHINE, COL.DESC, COL.END_TIME, COL.DATE) - first + 1;
-  var vals = sh.getRange(ROW.DATA_START, first, last - ROW.DATA_START + 1, width).getDisplayValues();
+  var range = sh.getRange(ROW.DATA_START, first, last - ROW.DATA_START + 1, width);
+  var vals = range.getDisplayValues();
+  var notes = range.getNotes();
   vals.forEach(function (v, i) {
     var c = v[COL.MACHINE - first], d = v[COL.DESC - first];
     if (isEmpty_(c) && isEmpty_(d)) return;
-    var key = recordKey_(c, d, v[COL.END_TIME - first], v[COL.DATE - first]);
+    var orig = function (col, shown) { return originalFromNote_(notes[i][col - first]) || shown; };
+    var key = recordKey_(orig(COL.MACHINE, c), orig(COL.DESC, d), v[COL.END_TIME - first], v[COL.DATE - first]);
     if (!keys.hasOwnProperty(key)) keys[key] = ROW.DATA_START + i;
   });
   return keys;
@@ -181,8 +192,10 @@ function existingKeys_(sh) {
 /**
  * Pratinjau tanpa menulis apa pun. `include` = default centang di UI:
  * tidak dicentang kalau jenisnya di SKIP_TYPES, duplikat, atau tidak bisa ditulis.
+ * opts.translate === false: tanpa terjemahan. Kalau terjemahan gagal, record tetap tampil
+ * (tanpa terjemahan) dan `translateError` diisi; UI menawarkan lanjut tanpa terjemahan.
  */
-function previewWeChat(text, otherSheet) {
+function previewWeChat(text, otherSheet, opts) {
   var ss = ss_();
   var other = issueSheet_(ss, otherSheet).getName();
   var recs = parseReports(text);
@@ -197,7 +210,17 @@ function previewWeChat(text, otherSheet) {
       r.duplicateOf = { where: 'sheet', sheet: name, row: info[name].keys[r.key] };
     }
   });
+  var translateError = '';
+  if (wantTranslate_(opts)) {
+    try {
+      translateRecords_(recs.filter(function (r) { return r.writable; }));
+    } catch (e) {
+      translateError = 'Terjemahan gagal: ' + (e.message || e);
+    }
+  }
   return {
+    translated: wantTranslate_(opts) && !translateError,
+    translateError: translateError,
     records: recs.map(toView_),
     sheets: Object.keys(info).map(function (n) {
       return { name: n, nextRow: info[n].nextRow, error: info[n].error };
@@ -215,8 +238,9 @@ function sheetInfo_(ss, name) {
   return { error: '', nextRow: findNextRow(sh), keys: existingKeys_(sh) };
 }
 
-/** Record -> objek polos untuk UI (label sudah diformat). */
+/** Record -> objek polos untuk UI (label sudah diformat, `cells` = isi sel yang akan ditulis). */
 function toView_(r) {
+  var row = buildRow_(r);
   return {
     id: r.id,
     sheet: r.sheet || '',
@@ -238,7 +262,9 @@ function toView_(r) {
     skip: r.skip,
     writable: r.writable,
     duplicateOf: r.duplicateOf || null,
-    yellow: buildRow_(r).yellow.map(function (k) { return { key: k, col: colLetter_(COL[k]) }; }),
+    translated: !!r.tr,
+    cells: { C: row.values.MACHINE, D: row.values.DESC, K: row.values.NOTES },
+    empty: row.empty.map(function (k) { return { key: k, col: colLetter_(COL[k]) }; }),
     warnings: r.warnings.map(function (w) { return { col: w.col ? colLetter_(COL[w.col]) : '', msg: w.msg }; }),
     include: r.writable && !r.sheetError && !r.skip && !r.duplicateOf
   };
@@ -247,8 +273,9 @@ function toView_(r) {
 /**
  * Tulis laporan yang dipilih. Teks di-parse ulang di server (sumber kebenaran tetap teks
  * aslinya); `picks` = [{ id, discipline }] dari pratinjau. Ditulis urut jam kejadian.
+ * Terjemahan dikerjakan SEBELUM menulis: kalau gagal, tidak ada satu baris pun yang ditulis.
  */
-function importWeChat(text, otherSheet, picks) {
+function importWeChat(text, otherSheet, picks, opts) {
   var lock = LockService.getScriptLock();
   if (!lock.tryLock(LOCK_TIMEOUT_MS)) {
     throw new Error('Masih ada impor lain yang berjalan. Coba lagi beberapa detik.');
@@ -262,10 +289,16 @@ function importWeChat(text, otherSheet, picks) {
     var nextFrom = {};
     var written = [];
     var errors = [];
-    parseReports(text).forEach(function (rec) {
-      var p = chosen[rec.id];
-      if (!p) return;
-      applyDisciplineChoice_(rec, p.discipline);
+    var recs = parseReports(text).filter(function (rec) { return chosen.hasOwnProperty(rec.id); });
+    recs.forEach(function (rec) { applyDisciplineChoice_(rec, chosen[rec.id].discipline); });
+    if (wantTranslate_(opts)) {
+      try {
+        translateRecords_(recs.filter(function (r) { return r.writable; }));
+      } catch (e) {
+        throw new Error('Terjemahan gagal, tidak ada yang ditulis: ' + (e.message || e) + '. Coba lagi, atau lanjut tanpa terjemahan.');
+      }
+    }
+    recs.forEach(function (rec) {
       var label = (fmtTime_(rec.start.time) || '??:??') + ' ' + (rec.machine || rec.description);
       if (!rec.writable) {
         errors.push(label + ': Machine & Deskripsi kosong, tidak ditulis.');

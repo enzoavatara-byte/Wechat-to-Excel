@@ -3,7 +3,7 @@
  *
  * Fungsi MURNI: tidak memakai SpreadsheetApp/Utilities, supaya bisa dites di Node
  * (test/parser.test.js). Aturan utamanya: JANGAN mengarang data. Field yang gagal
- * terbaca dikosongkan, ditandai di `missing` (kunci = nama kolom di COL -> sel kuning) dan dicatat di `warnings`
+ * terbaca dikosongkan, ditandai di `missing` (kunci = nama kolom di COL) dan dicatat di `warnings`
  * (-> kolom Notes), lengkap dengan teks aslinya supaya tidak ada yang hilang.
  *
  * Parsing dikunci pada SIMBOL (①..⑨, ⑥-1/⑥-2, ⑦-1/⑦-2), bukan teks labelnya.
@@ -323,23 +323,29 @@ function applyDisciplineChoice_(rec, choice) {
   return rec;
 }
 
-/** Nilai per kolom (kunci = nama di COL) + daftar kolom yang diberi latar kuning. */
+/**
+ * Nilai per kolom (kunci = nama di COL), kolom yang masih kosong (dilengkapi manual), dan catatan sel.
+ * Kalau rec.tr ada (sudah diterjemahkan, lihat Translate.gs): C, D, K jadi "中文\n(English)" dan
+ * teks asli + peringatan pindah ke catatan sel. Tanpa terjemahan: Bahasa Indonesia apa adanya.
+ */
 function buildRow_(rec) {
-  var yellow = ['ROOT_CAUSE', 'SOLUTION'];
+  var empty = ['ROOT_CAUSE', 'SOLUTION'];
   ['MACHINE', 'DESC', 'END_TIME', 'DISCIPLINE', 'PIC', 'DATE'].forEach(function (k) {
-    if (rec.missing[k]) yellow.push(k);
+    if (rec.missing[k]) empty.push(k);
   });
+  var tr = !!rec.tr;
   return {
     values: {
-      MACHINE: rec.machine,
-      DESC: rec.description,
+      MACHINE: tr ? machineBi_(rec) : rec.machine,
+      DESC: tr ? descBi_(rec) : rec.description,
       END_TIME: rec.end.time ? timeSerial_(rec.end.time) : '',
       DISCIPLINE: rec.discipline,
       PIC: rec.pic,
       DATE: rec.start.date ? dateSerial_(rec.start.date) : '',
-      NOTES: buildNotes_(rec)
+      NOTES: tr ? notesBi_(rec) : buildNotes_(rec)
     },
-    yellow: yellow
+    notes: tr ? cellNotes_(rec) : {},
+    empty: empty
   };
 }
 
