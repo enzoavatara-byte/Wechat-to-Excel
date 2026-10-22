@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>WeChat Import</title>
+  <?!= include('Styles'); ?>
+</head>
+<body class="mode-<?= mode ?>">
+  <header class="top">
+    <div class="inner">
+      <div class="brand">
+        <span class="logo" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11.5a7.5 7.5 0 0 1-10.9 6.7L4 19.5l1.3-4.4A7.5 7.5 0 1 1 20 11.5z"/><path d="M9 10h6M9 13.5h3.5"/></svg>
+        </span>
+        <div>
+          <div class="title">WeChat Import</div>
+          <div class="sub" id="ss-name">Memuat…</div>
+        </div>
+      </div>
+      <ol class="steps" id="steps">
+        <li data-step="paste" class="on"><span>1</span>Paste</li>
+        <li data-step="preview"><span>2</span>Periksa</li>
+        <li data-step="result"><span>3</span>Selesai</li>
+      </ol>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <div id="flash" role="status" aria-live="polite"></div>
+
+    <!-- 1. Paste -->
+    <section id="view-paste">
+      <div class="card">
+        <h1>Paste laporan dari grup WeChat</h1>
+        <p class="muted lead">Satu atau beberapa laporan sekaligus (format ①–⑨). Data yang kosong atau rusak tetap bisa diimpor; selnya ditandai kuning untuk dilengkapi nanti.</p>
+        <textarea id="src" class="mono" spellcheck="false" autocomplete="off"
+          placeholder="①Tingkat saat ini: L1&#10;②Nama proyek: E245&#10;③Nama proses: Finishing&#10;④Waktu kejadian: 2026.10.20/18:05&#10;⑤Deskripsi: …&#10;⑥-1Jenis masalah: Mesin&#10;⑥-2Respond PIC: @nama&#10;⑦-1Status lini produksi: …&#10;⑦-2Status Penanganan: …&#10;⑧Waktu penutupan: 2026.10.20/18:23&#10;⑨Durasi dampak: 18 menit"></textarea>
+
+        <div class="opts">
+          <div>
+            <label for="other">Sheet untuk proyek lain</label>
+            <select id="other" disabled><option>Memuat…</option></select>
+          </div>
+          <div>
+            <span class="label">Sheet per proyek</span>
+            <div class="routes" id="routes"></div>
+          </div>
+        </div>
+
+        <div class="actions">
+          <span class="kbd-hint"><kbd>Ctrl</kbd> + <kbd>Enter</kbd></span>
+          <button type="button" class="btn ghost" id="btn-clear">Bersihkan</button>
+          <button type="button" class="btn primary" id="btn-preview" disabled>Proses laporan</button>
+        </div>
+      </div>
+
+      <details class="card help">
+        <summary>Format yang dikenali</summary>
+        <ul>
+          <li>Kunci pembacaan adalah <b>simbol</b> ①–⑨ dan ⑥-1/⑥-2, ⑦-1/⑦-2. Teks labelnya boleh berbeda, asal ada <code>:</code> atau <code>：</code> sebelum isinya.</li>
+          <li>Tanggal harus <b>tahun.bulan.tanggal</b> (<code>2026.10.20</code>, <code>2026-10-20</code>). <code>20/10/2026</code> tidak dibaca karena ambigu.</li>
+          <li>Jam boleh <code>18:05</code> atau <code>18.05</code>. ⑨ boleh dengan atau tanpa "menit". Durasi selalu dihitung ulang dari ④ dan ⑧.</li>
+          <li>Laporan yang lupa menulis ① tetap terbaca. Teks obrolan lain di luar laporan diabaikan.</li>
+          <li>Field yang gagal terbaca <b>tidak ditebak</b>: dikosongkan, diberi warna kuning, dan teks aslinya dicatat di kolom Notes.</li>
+        </ul>
+      </details>
+    </section>
+
+    <!-- 2. Periksa -->
+    <section id="view-preview" class="hidden">
+      <div class="card summary" id="summary"></div>
+      <div class="toolbar">
+        <div class="legend"><span class="swatch"></span>Sel kuning di sheet = perlu dilengkapi manual. Root Cause &amp; Solution selalu kuning.</div>
+        <div class="toolbar-actions">
+          <button type="button" class="link" id="sel-all">Pilih semua</button>
+          <button type="button" class="link" id="sel-none">Kosongkan pilihan</button>
+        </div>
+      </div>
+      <div id="rec-list"></div>
+    </section>
+
+    <!-- 3. Selesai -->
+    <section id="view-result" class="hidden"></section>
+  </main>
+
+  <div class="actionbar hidden" id="actionbar">
+    <div class="inner">
+      <button type="button" class="btn ghost" id="btn-back">← Ubah teks</button>
+      <div class="act-note" id="act-note"></div>
+      <button type="button" class="btn primary" id="btn-import">Impor</button>
+    </div>
+  </div>
+
+  <script>var APP_MODE = <?!= JSON.stringify(mode) ?>;</script>
+  <?!= include('App'); ?>
+</body>
+</html>

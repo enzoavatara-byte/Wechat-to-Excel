@@ -1,0 +1,369 @@
+<script>
+(function () {
+  'use strict';
+
+  var state = {
+    init: null,
+    preview: null,   // hasil previewWeChat
+    text: '',        // teks yang dipratinjau = teks yang akan diimpor
+    other: '',
+    sel: {},         // id -> dicentang?
+    disc: {}         // id -> Discipline pilihan
+  };
+
+  // Pertanyaan untuk mentor per kolom kuning (Root Cause & Solution selalu ditanyakan).
+  var QUESTIONS = {
+    MACHINE: 'Proyek / proses (Machine)?',
+    DESC: 'Deskripsi masalah?',
+    END_TIME: 'Jam selesai?',
+    DISCIPLINE: 'Discipline (Machine / Operation / Product Item / MES)?',
+    PIC: 'PIC / Responsibility?',
+    DATE: 'Tanggal kejadian?'
+  };
+
+  // ---------- util ----------
+  function $(id) { return document.getElementById(id); }
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+  function call(fn) {
+    var args = Array.prototype.slice.call(arguments, 1);
+    return new Promise(function (resolve, reject) {
+      var r = google.script.run.withSuccessHandler(resolve).withFailureHandler(function (e) {
+        reject(new Error((e && e.message) || String(e)));
+      });
+      r[fn].apply(r, args);
+    });
+  }
+  function cleanErr(e) { return String(e.message || e).replace(/^(Error|Exception):\s*/, ''); }
+  function flash(msg, kind) {
+    $('flash').innerHTML = msg ? '<div class="alert ' + (kind || 'err') + '">' + esc(msg) + '</div>' : '';
+    if (msg) window.scrollTo(0, 0);
+  }
+  function busy(btn, on, label) {
+    if (on) { btn.dataset.label = btn.textContent; btn.textContent = label; btn.disabled = true; btn.classList.add('is-busy'); }
+    else { btn.textContent = btn.dataset.label || btn.textContent; btn.disabled = false; btn.classList.remove('is-busy'); }
+  }
+  function empty(text) { return '<span class="empty">' + esc(text || 'kosong') + '</span>'; }
+  function colChips(list) {
+    return list.map(function (y) { return '<span class="col-chip">' + esc(y.col) + '</span>'; }).join('');
+  }
+  function selectable(r) { return r.writable && !r.sheetError; }
+
+  function show(view) {
+    var order = ['paste', 'preview', 'result'];
+    order.forEach(function (v) { $('view-' + v).classList.toggle('hidden', v !== view); });
+    $('actionbar').classList.toggle('hidden', view !== 'preview');
+    var idx = order.indexOf(view);
+    Array.prototype.forEach.call(document.querySelectorAll('#steps li'), function (li) {
+      var i = order.indexOf(li.getAttribute('data-step'));
+      li.className = i === idx ? 'on' : (i < idx ? 'done' : '');
+    });
+    window.scrollTo(0, 0);
+  }
+
+  // ---------- 1. Paste ----------
+  function boot() {
+    call('getInitData').then(function (d) {
+      state.init = d;
+      $('ss-name').textContent = d.spreadsheetName;
+      $('other').innerHTML = d.sheets.map(function (n) {
+        return '<option value="' + esc(n) + '"' + (n === d.defaultOther ? ' selected' : '') + '>' + esc(n) + '</option>';
+      }).join('');
+      $('other').disabled = !d.sheets.length;
+      $('routes').innerHTML = d.projectSheets.map(function (p) {
+        return '<span class="route' + (p.ok ? '' : ' bad') + '"><b>' + esc(p.project) + '</b> → ' + esc(p.sheet) +
+          (p.ok ? '' : ' (sheet tidak ditemukan)') + '</span>';
+      }).join('') || '<span class="muted small">Belum ada (PROJECT_SHEET kosong).</span>';
+      if (!d.sheets.length) {
+        flash('Tidak ada sheet dengan header di baris ' + d.headerRow + ' (No.序号 | Machine | Issue Description). Tool tidak akan menulis apa pun.');
+        return;
+      }
+      $('btn-preview').disabled = false;
+    }).catch(function (e) { flash('Gagal memuat: ' + cleanErr(e)); });
+  }
+
+  function doPreview() {
+    var btn = $('btn-preview');
+    if (btn.disabled) return;
+    var text = $('src').value;
+    if (!text.trim()) { flash('Paste dulu teks laporan dari WeChat.', 'warn'); $('src').focus(); return; }
+    var other = $('other').value;
+    flash('');
+    busy(btn, true, 'Memproses…');
+    call('previewWeChat', text, other).then(function (p) {
+      if (!p.records.length) {
+        flash('Tidak ada laporan terdeteksi. Pastikan teks berisi simbol ①–⑨ dari format laporan WeChat.', 'warn');
+        return;
+      }
+      state.preview = p;
+      state.text = text;
+      state.other = other;
+      state.sel = {};
+      state.disc = {};
+      p.records.forEach(function (r) { state.sel[r.id] = r.include; state.disc[r.id] = r.discipline; });
+      renderPreview();
+      show('preview');
+    }).catch(function (e) { flash(cleanErr(e)); })
+      .then(function () { busy(btn, false); });
+  }
+
+  // ---------- 2. Periksa ----------
+  function stat(id, n, label, cls) {
+    return '<div class="stat ' + (cls || '') + '"><b' + (id ? ' id="' + id + '"' : '') + '>' + n + '</b><span>' + esc(label) + '</span></div>';
+  }
+
+  function renderPreview() {
+    var p = state.preview, recs = p.records;
+    var count = function (fn) { return recs.filter(fn).length; };
+    var nSkip = count(function (r) { return r.skip; });
+    var nWarn = count(function (r) { return r.warnings.length; });
+    var nDup = count(function (r) { return r.duplicateOf; });
+    var dest = p.sheets.map(function (s) {
+      return s.error
+        ? '<span class="dest bad">' + esc(s.name) + ': ' + esc(s.error) + '</span>'
+        : '<span class="dest"><b>' + esc(s.name) + '</b> · mulai baris ' + s.nextRow + '</span>';
+    }).join('');
+    $('summary').innerHTML =
+      '<div class="sum-head"><div><div class="sum-big">' + recs.length + ' laporan terdeteksi</div>' +
+      '<div class="muted small">Urut dari jam kejadian paling awal. Centang yang mau diimpor.</div></div>' +
+      '<div class="sum-dest">' + dest + '</div></div>' +
+      '<div class="stats">' +
+        stat('sel-count', 0, 'akan diimpor', 'primary') +
+        stat('', nSkip, 'default dilewati') +
+        stat('', nWarn, 'ada peringatan', nWarn ? 'warn' : '') +
+        stat('', nDup, 'duplikat', nDup ? 'warn' : '') +
+      '</div>';
+    renderCards();
+  }
+
+  function renderCards() {
+    $('rec-list').innerHTML = state.preview.records.map(card).join('');
+    updateCounts();
+  }
+
+  function dupText(d) {
+    return d.where === 'sheet' ? 'sudah ada: ' + d.sheet + ' baris ' + d.row : 'duplikat di teks ini';
+  }
+
+  function card(r) {
+    var on = !!state.sel[r.id], can = selectable(r);
+    var tags = [];
+    if (r.type) tags.push('<span class="tag ' + (r.skip ? '' : (r.discipline ? 'blue' : 'amber')) + '">' + esc(r.type) + '</span>');
+    if (r.skip) tags.push('<span class="tag">default tidak diimpor</span>');
+    if (r.duplicateOf) tags.push('<span class="tag amber">' + esc(dupText(r.duplicateOf)) + '</span>');
+    if (r.sheetError) tags.push('<span class="tag red">' + esc(r.sheetError) + '</span>');
+    else if (!r.writable) tags.push('<span class="tag red">tidak bisa ditulis</span>');
+    tags.push('<span class="tag outline">→ ' + esc(r.sheet) + '</span>');
+
+    var meta = [
+      r.date ? esc(r.date) : empty('tanggal ?'),
+      r.endDate ? 'selesai ' + esc(r.endDate) : '',
+      r.durationText !== '-' ? esc(r.durationText) : ''
+    ].filter(Boolean).join(' · ');
+
+    var head =
+      '<label class="rec-head">' +
+        '<input type="checkbox" data-id="' + r.id + '"' + (on ? ' checked' : '') + (can ? '' : ' disabled') + '>' +
+        '<div class="when"><div class="time">' + (r.start ? esc(r.start) : empty('?')) +
+          '<span class="arrow">→</span>' + (r.end ? esc(r.end) : empty('?')) + '</div>' +
+          '<div class="meta">' + meta + '</div></div>' +
+        '<div class="tags">' + tags.join('') + '</div>' +
+      '</label>';
+
+    var body =
+      '<div class="rec-body">' +
+        field('Machine', r.machine) +
+        '<div class="field"><div class="k">Discipline</div><div class="v">' + disciplineSelect(r, can) + '</div></div>' +
+        field('Deskripsi', r.description, 'wide') +
+        field('PIC', r.pic) +
+        field('Level · Status', [r.level, r.lineStatus, r.handling].filter(Boolean).join(' · ')) +
+      '</div>';
+
+    var warns = r.warnings.length
+      ? '<ul class="warns">' + r.warnings.map(function (w) {
+          return '<li>' + (w.col ? '<span class="col-chip">' + esc(w.col) + '</span>' : '<span class="col-chip note">!</span>') +
+            '<span>' + esc(w.msg) + '</span></li>';
+        }).join('') + '</ul>'
+      : '';
+    var foot = '<div class="rec-foot">' + warns +
+      '<div class="cells">Sel kuning di sheet: ' + colChips(r.yellow) + '</div></div>';
+
+    var cls = 'rec ' + (on ? 'is-on' : 'is-off') + (can ? '' : ' is-blocked');
+    return '<article class="' + cls + '" data-id="' + r.id + '">' + head + body + foot + '</article>';
+  }
+
+  function field(label, value, cls) {
+    return '<div class="field ' + (cls || '') + '"><div class="k">' + esc(label) + '</div><div class="v">' +
+      (value ? esc(value) : empty()) + '</div></div>';
+  }
+
+  function disciplineSelect(r, can) {
+    var cur = state.disc[r.id] || '';
+    var opts = ['<option value="">— kosong (kuning) —</option>'].concat(state.init.disciplines.map(function (d) {
+      return '<option value="' + esc(d) + '"' + (d === cur ? ' selected' : '') + '>' + esc(d) + '</option>';
+    }));
+    var hint = r.discipline ? 'otomatis dari “' + r.type + '”'
+      : (r.type ? '“' + r.type + '” belum dipetakan, pilih manual atau biarkan kosong' : 'jenis ⑥-1 kosong');
+    return '<select class="disc' + (cur ? '' : ' is-empty') + '" data-id="' + r.id + '"' + (can ? '' : ' disabled') + '>' +
+      opts.join('') + '</select><div class="hint">' + esc(hint) + '</div>';
+  }
+
+  function picks() {
+    return state.preview.records
+      .filter(function (r) { return state.sel[r.id] && selectable(r); })
+      .map(function (r) { return { id: r.id, discipline: state.disc[r.id] }; });
+  }
+
+  function updateCounts() {
+    var n = picks().length, total = state.preview.records.length;
+    if ($('sel-count')) $('sel-count').textContent = n;
+    $('act-note').textContent = n + ' dari ' + total + ' laporan dipilih';
+    var btn = $('btn-import');
+    if (!btn.classList.contains('is-busy')) {
+      btn.textContent = n ? 'Impor ' + n + ' laporan' : 'Belum ada yang dipilih';
+      btn.disabled = !n;
+    }
+  }
+
+  function setAll(on) {
+    state.preview.records.forEach(function (r) { if (selectable(r)) state.sel[r.id] = on; });
+    renderCards();
+  }
+
+  function doImport() {
+    var list = picks();
+    if (!list.length) return;
+    var btn = $('btn-import');
+    busy(btn, true, 'Menulis ke sheet…');
+    $('btn-back').disabled = true;
+    call('importWeChat', state.text, state.other, list).then(function (res) {
+      flash('');
+      renderResult(res);
+      show('result');
+    }).catch(function (e) { flash('Gagal menulis: ' + cleanErr(e)); })
+      .then(function () { busy(btn, false); $('btn-back').disabled = false; updateCounts(); });
+  }
+
+  // ---------- 3. Selesai ----------
+  function rowUrl(url, x) { return url.replace(/#.*$/, '') + '#gid=' + x.sheetId + '&range=B' + x.row; }
+
+  function rowsText(rows) {
+    rows = rows.slice().sort(function (a, b) { return a - b; });
+    var contiguous = rows.every(function (r, i) { return i === 0 || r === rows[i - 1] + 1; });
+    return contiguous && rows.length > 1 ? rows[0] + '–' + rows[rows.length - 1] : rows.join(', ');
+  }
+
+  function renderResult(res) {
+    var w = res.written;
+    var bySheet = {};
+    w.forEach(function (x) { (bySheet[x.sheet] = bySheet[x.sheet] || []).push(x.row); });
+    var where = Object.keys(bySheet).map(function (s) { return s + ' baris ' + rowsText(bySheet[s]); }).join('; ');
+
+    var hero = '<div class="card hero' + (w.length ? '' : ' empty-result') + '">' +
+      '<div class="hero-icon">' + (w.length ? '✓' : '!') + '</div>' +
+      '<div class="grow"><h1>' + (w.length ? w.length + ' laporan ditulis' : 'Tidak ada yang ditulis') + '</h1>' +
+      '<p class="muted">' + (w.length ? esc(where) + '. Lengkapi sel kuning setelah tanya mentor.' : 'Lihat pesan di bawah.') + '</p></div>' +
+      '<a class="btn ghost" href="' + esc(res.url) + '" target="_blank" rel="noopener">Buka spreadsheet ↗</a></div>';
+
+    var errors = res.errors.length
+      ? '<div class="alert err"><b>Tidak ditulis:</b><ul>' + res.errors.map(function (e) { return '<li>' + esc(e) + '</li>'; }).join('') + '</ul></div>'
+      : '';
+
+    var table = w.length ? '<div class="card"><h2>Baris yang ditulis</h2><div class="table-wrap"><table>' +
+      '<thead><tr><th>No.</th><th>Sheet · baris</th><th>Waktu</th><th>Machine · Deskripsi</th><th>Sel kuning</th></tr></thead><tbody>' +
+      w.map(function (x) {
+        return '<tr><td class="num">' + esc(x.no) + '</td>' +
+          '<td class="nowrap"><a href="' + esc(rowUrl(res.url, x)) + '" target="_blank" rel="noopener">' + esc(x.sheet) + ' · ' + x.row + ' ↗</a></td>' +
+          '<td class="nowrap">' + esc([x.date, x.start].filter(Boolean).join(' ')) + '</td>' +
+          '<td>' + (x.machine ? esc(x.machine) : empty()) + '<div class="muted small clamp">' + esc(x.description) + '</div></td>' +
+          '<td><div class="chips">' + colChips(x.yellow) + '</div></td></tr>';
+      }).join('') + '</tbody></table></div></div>' : '';
+
+    var mentor = w.length ? '<div class="card"><div class="card-row"><h2>Pertanyaan untuk mentor</h2>' +
+      '<button type="button" class="btn ghost sm" id="btn-copy">Salin</button></div>' +
+      '<div class="muted small">Teks siap kirim untuk melengkapi sel kuning. Boleh diedit dulu.</div>' +
+      '<textarea id="mentor-text" class="mono">' + esc(mentorText(w)) + '</textarea></div>' : '';
+
+    var actions = '<div class="end-actions">' +
+      (APP_MODE === 'dialog' ? '<button type="button" class="btn ghost" id="btn-close">Tutup</button>' : '') +
+      '<button type="button" class="btn primary" id="btn-again">Paste laporan berikutnya</button></div>';
+
+    $('view-result').innerHTML = hero + errors + table + mentor + actions;
+  }
+
+  function mentorText(written) {
+    var out = ['Mohon bantuannya untuk melengkapi laporan berikut:', ''];
+    written.forEach(function (x, i) {
+      out.push((i + 1) + ') No. ' + x.no + ' · ' + [x.date, x.start].filter(Boolean).join(' ') + ' · ' + (x.machine || '-'));
+      if (x.description) out.push('   Masalah: ' + x.description.replace(/\s*\n\s*/g, '; '));
+      out.push('   - Root cause?');
+      out.push('   - Solusi?');
+      x.yellow.forEach(function (y) {
+        var q = QUESTIONS[y.key];
+        if (!q) return;
+        if (y.key === 'DISCIPLINE' && x.type) q += ' (jenis dari operator: "' + x.type + '")';
+        out.push('   - ' + q);
+      });
+      out.push('');
+    });
+    return out.join('\n').trim();
+  }
+
+  function copyText(ta, btn) {
+    var done = function () {
+      btn.textContent = 'Tersalin ✓';
+      setTimeout(function () { btn.textContent = 'Salin'; }, 1600);
+    };
+    var fallback = function () {
+      ta.focus();
+      ta.select();
+      try { if (document.execCommand('copy')) { done(); return; } } catch (e) { /* lanjut ke pesan */ }
+      flash('Browser menolak menyalin otomatis. Teks sudah dipilih: tekan Ctrl+C.', 'warn');
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(ta.value).then(done, fallback);
+    else fallback();
+  }
+
+  // ---------- event ----------
+  $('btn-preview').addEventListener('click', doPreview);
+  $('btn-clear').addEventListener('click', function () { $('src').value = ''; flash(''); $('src').focus(); });
+  $('src').addEventListener('keydown', function (e) {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); doPreview(); }
+  });
+  $('btn-back').addEventListener('click', function () { show('paste'); $('src').focus(); });
+  $('btn-import').addEventListener('click', doImport);
+  $('sel-all').addEventListener('click', function () { setAll(true); });
+  $('sel-none').addEventListener('click', function () { setAll(false); });
+
+  $('rec-list').addEventListener('change', function (e) {
+    var t = e.target, id = Number(t.getAttribute('data-id'));
+    if (t.type === 'checkbox') {
+      state.sel[id] = t.checked;
+      var art = t.closest('.rec');
+      art.classList.toggle('is-on', t.checked);
+      art.classList.toggle('is-off', !t.checked);
+      updateCounts();
+    } else if (t.classList.contains('disc')) {
+      state.disc[id] = t.value;
+      t.classList.toggle('is-empty', !t.value);
+    }
+  });
+
+  $('view-result').addEventListener('click', function (e) {
+    var id = e.target.id;
+    if (id === 'btn-copy') copyText($('mentor-text'), e.target);
+    else if (id === 'btn-close') google.script.host.close();
+    else if (id === 'btn-again') {
+      state.preview = null;
+      $('src').value = '';
+      show('paste');
+      $('src').focus();
+    }
+  });
+
+  boot();
+})();
+</script>
