@@ -53,6 +53,7 @@ class MockRange {
   setValue(v) { return this.setValues([[v]]); }
   setNumberFormat(f) { this.each((r, c) => { this.sheet.cell(r, c).f = f; }); return this; }
   setBackground(bg) { this.each((r, c) => { this.sheet.cell(r, c).bg = bg; }); return this; }
+  getDataValidation() { return this.sheet.validations.get(this.row + ',' + this.col) || null; }
 }
 
 class MockSheet {
@@ -60,6 +61,7 @@ class MockSheet {
     this.name = name;
     this.id = id;
     this.cells = new Map();
+    this.validations = new Map();
     this.writes = 0;
   }
   cell(r, c) {
@@ -90,7 +92,10 @@ class MockSpreadsheet {
     this.name = name;
     this.sheets = sheets;
     this.active = activeIndex || 0;
+    this.tz = 'Asia/Jakarta';
   }
+  getSpreadsheetTimeZone() { return this.tz; }
+  setSpreadsheetTimeZone(tz) { this.tz = tz; }
   getName() { return this.name; }
   getUrl() { return 'https://docs.google.com/spreadsheets/d/TEST/edit'; }
   getSheets() { return this.sheets; }
@@ -100,8 +105,15 @@ class MockSpreadsheet {
 
 function services(ss) {
   return {
-    SpreadsheetApp: { getActiveSpreadsheet: () => ss, flush() {} },
-    LockService: { getScriptLock: () => ({ tryLock: () => true, releaseLock() {} }) }
+    SpreadsheetApp: {
+      getActiveSpreadsheet: () => ss,
+      flush() {},
+      DataValidationCriteria: { VALUE_IN_LIST: 'VALUE_IN_LIST', VALUE_IN_RANGE: 'VALUE_IN_RANGE' },
+      // Seperti saat Run dari editor tanpa spreadsheet terbuka.
+      getUi() { throw new Error('Cannot call SpreadsheetApp.getUi() from this context.'); }
+    },
+    LockService: { getScriptLock: () => ({ tryLock: () => true, releaseLock() {} }) },
+    Session: { getScriptTimeZone: () => 'Asia/Shanghai' }
   };
 }
 
@@ -113,6 +125,12 @@ function issueSheet(name, id, filledRows, numberedTo) {
   sh.set('B6', 'ASSEMBLY & UPFIT PALLET PRE-ACCEPTANCE CHECKLIST');
   HEADER.forEach((h, i) => sh.cell(8, 2 + i).v = h);
   for (let n = 1; n <= numberedTo; n++) sh.cell(8 + n, 2).v = n;
+  // Sumber dropdown H di file asli: I2:I5, validasi di H9:H35.
+  ['Machine', 'Operation', 'Product Item', 'MES'].forEach((d, i) => { sh.cell(2 + i, 9).v = d; });
+  const source = sh.getRange(2, 9, 4, 1);
+  for (let r = 9; r <= 35; r++) {
+    sh.validations.set(r + ',8', { getCriteriaType: () => 'VALUE_IN_RANGE', getCriteriaValues: () => [source, true] });
+  }
   for (let n = 1; n <= filledRows; n++) {
     sh.cell(8 + n, 3).v = 'Mesin lama ' + n;
     sh.cell(8 + n, 4).v = 'Masalah lama ' + n;

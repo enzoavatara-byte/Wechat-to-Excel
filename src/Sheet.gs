@@ -114,6 +114,23 @@ function writeRecord(sh, row, rec) {
   return { row: row, no: no };
 }
 
+/**
+ * Isi dropdown kolom H (dibaca dari validasi sel baris data pertama), atau null kalau tidak ada.
+ * Dipakai setup() untuk memastikan DISCIPLINES cocok; nilai di luar dropdown ditolak Sheets.
+ */
+function dropdownValues_(sh) {
+  var rule = sh.getRange(ROW.DATA_START, COL.DISCIPLINE).getDataValidation();
+  if (!rule) return null;
+  var C = SpreadsheetApp.DataValidationCriteria;
+  var type = String(rule.getCriteriaType()); // enum dibandingkan lewat namanya
+  var arg = rule.getCriteriaValues()[0];
+  var vals;
+  if (type === String(C.VALUE_IN_LIST)) vals = arg;
+  else if (type === String(C.VALUE_IN_RANGE)) vals = [].concat.apply([], arg.getDisplayValues());
+  else return null;
+  return vals.map(function (v) { return String(v).trim(); }).filter(function (v) { return v !== ''; });
+}
+
 // ---------- Duplikat ----------
 
 /** Kunci (Machine|Deskripsi|End Time|Date seperti tampil di sheet) -> nomor baris. */

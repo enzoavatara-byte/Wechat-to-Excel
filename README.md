@@ -23,7 +23,7 @@ PASTE teks WeChat → PERIKSA (centang, pilih Discipline) → IMPOR → lengkapi
 | `src/Config.gs` | **Semua** konfigurasi: sheet per proyek, `DISCIPLINE_MAP`, jenis yang dilewati, kolom, warna, format |
 | `src/Parser.gs` | Fungsi murni (tanpa `SpreadsheetApp`): `parseReports`, `parseOne`, `parseDateTime`, pemetaan ke kolom |
 | `src/Sheet.gs` | `findNextRow`, `writeRecord`, `previewWeChat`, `importWeChat`, pengaman sheet, deteksi duplikat |
-| `src/Ui.gs` | `onOpen` (menu), `showImportDialog`, `doGet` (web app), `getInitData` |
+| `src/Ui.gs` | `setup` (izin + cek konfigurasi), `onOpen` (menu), `showImportDialog`, `doGet` (web app), `getInitData` |
 | `src/Index.html`, `App.html`, `Styles.html` | UI: satu halaman, 3 langkah. Dipakai di dialog menu **dan** web app |
 | `src/appsscript.json` | Manifest: timezone `Asia/Shanghai`, runtime V8, izin minimum |
 | `test/` | Test Node tanpa Google: parser + penulisan sheet dengan mock |
@@ -37,24 +37,28 @@ PASTE teks WeChat → PERIKSA (centang, pilih Discipline) → IMPOR → lengkapi
 1. **Convert .xlsx ke Google Sheets.** Upload file ke Google Drive → buka → **File → Save as Google Sheets**.
    Kerjakan di file Google Sheets hasilnya. (File .xlsx yang dibuka langsung masih "Office mode",
    menu Extensions → Apps Script tidak tersedia.)
-2. **Timezone spreadsheet:** File → Settings → Time zone → **(GMT+08:00) China Standard Time** (`Asia/Shanghai`).
-   Catatan: tool menulis tanggal & jam sebagai nomor seri, jadi hasilnya tidak bergeser walau timezone berbeda.
-   Setting ini hanya supaya sama dengan manifest.
-3. Di spreadsheet itu: **Extensions → Apps Script**.
-4. Paste **2 file** dari folder [`dist/`](dist/) (di GitHub: buka file → tombol *Copy raw file*):
+2. Di spreadsheet itu: **Extensions → Apps Script**.
+3. Paste **2 file** dari folder [`dist/`](dist/) (di GitHub: buka file → tombol *Copy raw file*):
    - **`Code.gs`** (sudah ada bawaan): hapus semua isinya → paste isi [`dist/Code.gs`](dist/Code.gs).
    - **+ → HTML** → beri nama **`Index`** → hapus isinya → paste isi [`dist/Index.html`](dist/Index.html).
 
    Jangan campur dengan file dari `src/`: kalau fungsi yang sama ada di dua file, yang terakhir dimuat yang
    dipakai, dan itu membingungkan saat debug.
-5. **Project Settings** (ikon gerigi) → centang **Show "appsscript.json" manifest file in editor** →
+4. **Project Settings** (ikon gerigi) → centang **Show "appsscript.json" manifest file in editor** →
    kembali ke Editor, ganti isi `appsscript.json` dengan [`dist/appsscript.json`](dist/appsscript.json). Simpan (Ctrl+S).
+5. **Run `setup`**: di toolbar editor pilih fungsi **`setup`** → **Run**. Pertama kali Google meminta izin:
+   Review permissions → pilih akun → *"Google hasn't verified this app"* → Advanced → Go to … (unsafe) → Allow.
+   Izin yang diminta hanya: spreadsheet **ini** saja + menampilkan dialog.
+   `setup` **tidak mengubah data**. Yang dilakukan:
+   - menyamakan timezone spreadsheet dengan manifest (`Asia/Shanghai`). Tool menulis tanggal/jam sebagai
+     nomor seri, jadi hasil impor tidak bergantung timezone; ini supaya konsisten saja;
+   - memeriksa: sheet dengan header baris 8, sheet tujuan tiap proyek (`PROJECT_SHEET`), dan apakah
+     `DISCIPLINES` cocok dengan dropdown kolom H (kalau tidak cocok, impor akan ditolak Sheets).
+
+   Hasilnya ada di **Execution log** di bawah editor. Baris `✗` = harus dibereskan dulu.
+   Aman dijalankan berulang; nanti bisa juga lewat menu **WeChat Import → Cek setup** (hasilnya muncul sebagai pop-up).
 6. Reload tab spreadsheet → menu **WeChat Import** muncul di menu bar.
-7. Klik **WeChat Import → Import laporan WeChat…**. Pertama kali, Google meminta izin:
-   Continue → pilih akun → *"Google hasn't verified this app"* → Advanced → Go to … (unsafe) → Allow.
-   Lalu klik menunya sekali lagi. Izin yang diminta hanya: spreadsheet **ini** saja + menampilkan dialog.
-   (Alternatif: di editor, buka file `Ui` → pilih fungsi `getInitData` → **Run**.)
-8. *(Opsional)* **Web app**: Deploy → **New deployment** → ⚙ **Web app** →
+7. *(Opsional)* **Web app**: Deploy → **New deployment** → ⚙ **Web app** →
    Execute as: **Me** · Who has access: **Only myself** → Deploy → salin URL berakhiran `/exec`, bookmark.
 
 ### Update kode
@@ -172,6 +176,7 @@ Field yang gagal terbaca **dikosongkan + kuning**, dan teks aslinya dicatat di N
 
 | Gejala | Penyebab paling mungkin | Solusi |
 |---|---|---|
+| Ragu setup sudah benar | – | **WeChat Import → Cek setup** (atau Run `setup`): semua baris harus `✓` |
 | Menu **WeChat Import** tidak muncul | Tab belum di-reload setelah paste kode, atau `onOpen` salah ketik | Reload tab spreadsheet; pastikan file `Ui` berisi fungsi `onOpen` |
 | "Tidak ada sheet dengan header di baris 8" | Header B8:D8 berubah, atau script dibuat bukan dari spreadsheet ini | Cek B8 = `No.序号`, C8 = `Machine`, D8 = `Issue Description…`; buat script lewat Extensions → Apps Script di spreadsheet yang benar |
 | "Sheet "Geely list (2)" tidak ditemukan" | Nama sheet berubah | Sesuaikan `PROJECT_SHEET` di `Config.gs` |

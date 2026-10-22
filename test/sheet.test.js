@@ -159,3 +159,26 @@ test('field rusak -> sel kosong + kuning di sheet', () => {
   assert.equal(limo.get('J' + row), '');
   assert.match(limo.get('K' + row), /⚠ ④ Waktu kejadian tanggal tidak terbaca: "20\/10\/2026 18:05"/);
 });
+
+test('setup: set timezone, cek sheet/proyek/dropdown, tidak menulis data', () => {
+  const { gas, ss } = setup();
+  const out = gas.setup();
+  assert.equal(ss.getSpreadsheetTimeZone(), 'Asia/Shanghai');
+  assert.equal(out.split('\n')[0], 'Setup OK. Reload spreadsheet, lalu pakai menu WeChat Import.');
+  assert.match(out, /✓ Timezone spreadsheet diubah: Asia\/Jakarta → Asia\/Shanghai/);
+  assert.match(out, /✓ Sheet issue \(header baris 8\): LImo 7 list, Geely list \(2\)/);
+  assert.match(out, /✓ "Geely list \(2\)": baris berikutnya 18, dropdown H cocok/);
+  assert.ok(ss.getSheets().every((sh) => sh.writes === 0));
+  assert.match(gas.setup(), /✓ Timezone spreadsheet: Asia\/Shanghai/); // aman diulang
+});
+
+test('setup: nama sheet berubah & dropdown beda -> dilaporkan sebagai masalah', () => {
+  const { gas, ss, geely, limo } = setup();
+  geely.name = 'Geely list';
+  limo.set('I5', 'MES System');
+  const out = gas.setup();
+  assert.equal(out.split('\n')[0], '2 masalah ditemukan.');
+  assert.match(out, /✗ Proyek E245 → "Geely list \(2\)" tidak ditemukan/);
+  assert.match(out, /✗ "LImo 7 list": dropdown H \[Machine, Operation, Product Item, MES System\] tidak berisi MES/);
+  assert.ok(ss.getSheets().every((sh) => sh.writes === 0));
+});
