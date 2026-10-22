@@ -73,6 +73,15 @@ function colLetter_(n) {
 }
 
 /**
+ * Teks yang diawali = + - @ dianggap rumus oleh Sheets ("- lem habis" -> #ERROR!), dan teks yang
+ * mirip angka/tanggal diubah jadi angka. Awalan ' memaksa teks (tidak terlihat di sel).
+ */
+function asText_(v) {
+  var s = String(v == null ? '' : v);
+  return s && (/^[=+\-@]/.test(s) || /^[\d\s.,:\/\-]+$/.test(s)) ? "'" + s : s;
+}
+
+/**
  * Tulis satu record ke baris `row`.
  * - B hanya diisi kalau masih kosong (nomor yang sudah ada tidak diubah).
  * - E & F (Root Cause, Solution) tidak pernah diisi, hanya diberi latar kuning.
@@ -81,6 +90,7 @@ function colLetter_(n) {
  */
 function writeRecord(sh, row, rec) {
   var out = buildRow_(rec);
+  ['MACHINE', 'DESC', 'PIC'].forEach(function (k) { out.values[k] = asText_(out.values[k]); });
   var noCell = sh.getRange(row, COL.NO);
   var no = noCell.getValue();
   if (isEmpty_(no)) {

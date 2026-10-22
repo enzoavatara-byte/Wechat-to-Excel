@@ -134,6 +134,21 @@ test('record tanpa Machine & Deskripsi tidak ditulis walau dicentang', () => {
   assert.equal(limo.writes, 0);
 });
 
+test('teks yang bisa dibaca Sheets sebagai rumus/angka dipaksa jadi teks', () => {
+  const { gas, limo } = setup();
+  const text = '②Nama proyek: L7\n③Nama proses: Assy\n④Waktu kejadian:2026.10.20/18:05\n' +
+    '⑤Deskripsi :\n- lem habis\n- nozzle buntu\n⑥-2Respond PIC : =HYPERLINK("x")\n⑧Waktu penutupan:2026.10.20/18:20';
+  const p = plain(gas.previewWeChat(text, 'LImo 7 list'));
+  const res = plain(gas.importWeChat(text, 'LImo 7 list', defaultPicks(p)));
+  const row = res.written[0].row;
+  assert.equal(limo.get('C' + row), 'L7 - Assy');
+  assert.equal(limo.get('D' + row), "'- lem habis\n- nozzle buntu");
+  assert.equal(limo.get('I' + row), '\'=HYPERLINK("x")');
+  // Duplikat tetap terdeteksi (apostrof tidak ikut terbaca).
+  const again = plain(gas.previewWeChat(text, 'LImo 7 list'));
+  assert.deepEqual(again.records[0].duplicateOf, { where: 'sheet', sheet: 'LImo 7 list', row });
+});
+
 test('field rusak -> sel kosong + kuning di sheet', () => {
   const { gas, limo } = setup();
   const text = '②Nama proyek: L7\n③Nama proses: Assy\n④Waktu kejadian: 20/10/2026 18:05\n⑤Deskripsi : baut longgar\n⑥-1Jenis masalah: Material';

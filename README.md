@@ -92,6 +92,8 @@ PASTE teks WeChat → PERIKSA (centang, pilih Discipline) → IMPOR → lengkapi
 - **Baris tujuan:** baris pertama mulai baris 9 yang **C dan D-nya kosong**.
 - **Urutan:** dari jam kejadian (tanggal + jam ④) paling awal. Laporan tanpa ④ yang valid ditaruh paling akhir.
 - **Durasi** selalu dihitung ulang dari ④ → ⑧. Kalau beda dengan ⑨ → peringatan. Lewat tengah malam ditangani.
+- Teks di C/D/I yang diawali `=` `+` `-` `@` atau mirip angka diberi awalan `'` (tidak terlihat), supaya
+  Sheets tidak membacanya sebagai rumus. Contoh: deskripsi berpoin `- lem habis` tanpa ini jadi `#ERROR!`.
 
 Contoh Notes:
 ```

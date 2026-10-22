@@ -6,7 +6,11 @@
 
 const pad = (n) => String(n).padStart(2, '0');
 
+// Seperti Sheets: awalan ' memaksa teks dan tidak ikut terbaca.
+const unquote = (v) => (typeof v === 'string' && v[0] === "'" ? v.slice(1) : v);
+
 function display(v, fmt) {
+  v = unquote(v);
   if (v === '' || v === null || v === undefined) return '';
   if (typeof v === 'number' && fmt === 'h:mm') {
     const min = Math.round(v * 1440) % 1440;
@@ -37,7 +41,7 @@ class MockRange {
     this.each((r, c, i, j) => { out[i][j] = fn(this.sheet.cell(r, c)); });
     return out;
   }
-  getValues() { return this.grid((x) => (x.v === undefined ? '' : x.v)); }
+  getValues() { return this.grid((x) => (x.v === undefined ? '' : unquote(x.v))); }
   getDisplayValues() { return this.grid((x) => display(x.v, x.f)); }
   getValue() { return this.getValues()[0][0]; }
   setValues(v) {
