@@ -272,3 +272,45 @@ test('setup: nama sheet berubah & dropdown beda -> dilaporkan sebagai masalah', 
   assert.match(out, /✗ "LImo 7 list": dropdown H \[Machine, Operation, Product Item, MES System\] tidak berisi MES/);
   assert.ok(ss.getSheets().every((sh) => sh.writes === 0));
 });
+
+test('REGRESI: menu Terjemahkan sel terpilih pada satu baris penuh tidak menyentuh H/I/B/G/J', () => {
+  const { gas, geely } = setup();
+  const p = plain(gas.previewWeChat(SAMPLE, 'LImo 7 list'));
+  gas.importWeChat(SAMPLE, 'LImo 7 list', defaultPicks(p)); // baris 18: H18 = "Machine" (dropdown), I18 = nama
+  geely.set('E18', 'baut longgar').set('F18', 'ganti baut baru');
+  const before = { H: geely.get('H18'), I: geely.get('I18'), B: geely.get('B18'), G: geely.get('G18'), J: geely.get('J18'), K: geely.get('K18') };
+  const res = plain(gas.translateRange_(geely.getRange('B18:K18'))); // dulu: error validasi di H
+  assert.equal(res.count, 2);
+  assert.equal(geely.get('E18'), '中:EN:baut longgar\n(EN:baut longgar)');
+  assert.equal(geely.get('F18'), '中:EN:ganti baut baru\n(EN:ganti baut baru)');
+  assert.deepEqual({ H: geely.get('H18'), I: geely.get('I18'), B: geely.get('B18'), G: geely.get('G18'), J: geely.get('J18'), K: geely.get('K18') }, before);
+  assert.match(res.message, /2 sel diterjemahkan/);
+  assert.match(res.message, /dilewati/);
+});
+
+test('menu Terjemahkan: header & area atas (sumber dropdown I2:I5) tidak pernah diterjemahkan', () => {
+  const { gas, geely } = setup();
+  const res = plain(gas.translateRange_(geely.getRange('A1:K8')));
+  assert.equal(res.count, 0);
+  assert.deepEqual([2, 3, 4, 5].map((r) => geely.cell(r, 9).v), ['Machine', 'Operation', 'Product Item', 'MES']);
+  assert.equal(geely.get('J8'), 'Date');
+});
+
+test('menu Terjemahkan: sheet bukan sheet issue ditolak', () => {
+  const { gas, ss } = setup();
+  const rev = ss.getSheetByName('Revision_History');
+  const res = plain(gas.translateRange_(rev.getRange('B2:C4')));
+  assert.equal(res.count, 0);
+  assert.match(res.message, /Hanya untuk sheet issue/);
+  assert.equal(rev.get('B2'), 'Document Revision History');
+});
+
+test('menu Terjemahkan: sel ber-dropdown di kolom yang boleh diterjemahkan tetap dilewati', () => {
+  const { gas, geely } = setup();
+  geely.set('E20', 'Machine');
+  const source = geely.getRange('I2:I5');
+  geely.validations.set('20,5', { allowInvalid: false, getCriteriaType: () => 'VALUE_IN_RANGE', getCriteriaValues: () => [source, true] });
+  const res = plain(gas.translateRange_(geely.getRange('E20')));
+  assert.equal(res.count, 0);
+  assert.equal(geely.get('E20'), 'Machine');
+});

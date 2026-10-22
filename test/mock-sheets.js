@@ -57,6 +57,16 @@ class MockRange {
   getValue() { return this.getValues()[0][0]; }
   setValues(v) {
     if (v.length !== this.nr || v[0].length !== this.nc) throw new Error('Ukuran setValues tidak cocok');
+    // Seperti Google: dropdown "reject input" menolak nilai di luar daftar (seluruh panggilan gagal).
+    this.each((r, c, i, j) => {
+      const rule = this.sheet.validations.get(r + ',' + c);
+      const val = unquote(v[i][j]);
+      if (!rule || rule.allowInvalid || val === '' || val === null || val === undefined) return;
+      const allowed = [].concat(...rule.getCriteriaValues()[0].getDisplayValues());
+      if (allowed.indexOf(String(val)) === -1) {
+        throw new Error('The data you entered in cell ' + a1Of(r, c) + ' violates the data validation rules set on this cell.');
+      }
+    });
     this.each((r, c, i, j) => { this.sheet.cell(r, c).v = v[i][j]; });
     this.sheet.writes++;
     return this;
@@ -66,6 +76,11 @@ class MockRange {
   setBackground(bg) { this.each((r, c) => { this.sheet.cell(r, c).bg = bg; }); return this; }
   getDataValidation() { return this.sheet.validations.get(this.row + ',' + this.col) || null; }
   getNotes() { return this.grid((x) => x.note || ''); }
+  getDataValidations() { const out = this.grid(() => null); this.each((r, c, i, j) => { out[i][j] = this.sheet.validations.get(r + ',' + c) || null; }); return out; }
+  getSheet() { return this.sheet; }
+  getRow() { return this.row; }
+  getColumn() { return this.col; }
+  getA1Notation() { return this.a1(); }
   setNotes(n) { this.each((r, c, i, j) => { this.sheet.cell(r, c).note = n[i][j]; }); return this; }
   setNote(n) { return this.setNotes([[n]]); }
   getFormulas() { return this.grid((x) => (typeof x.v === 'string' && x.v[0] === '=' ? x.v : '')); }

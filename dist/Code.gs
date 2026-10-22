@@ -11,7 +11,7 @@
  */
 var APP_NAME = 'WeChat Import';
 // Diisi otomatis oleh `npm run build` (dist/). Tampil di UI & setup untuk memastikan kode terbaru yang jalan.
-var APP_VERSION = 'ec1f8be';
+var APP_VERSION = 'e3b0860';
 
 // Struktur sheet manajer: header di baris 8, data mulai baris 9.
 var ROW = {
@@ -702,10 +702,15 @@ function originalFromNote_(note) {
 
 // ---------- Menu: terjemahkan sel terpilih ----------
 
+// Kolom yang boleh diterjemahkan lewat menu. H (dropdown Discipline), I (nama orang), dan B/G/J
+// (angka) tidak pernah diterjemahkan: menerjemahkan H melanggar validasi dropdown.
+var TRANSLATABLE_COLS = ['MACHINE', 'DESC', 'ROOT_CAUSE', 'SOLUTION', 'NOTES'];
+
 /**
  * Untuk teks yang diketik manual (mis. Root Cause/Solution setelah tanya mentor): sel terpilih
- * diubah ke "中文\n(English)", teks asli disimpan di catatan sel. Sel kosong, angka/tanggal, rumus,
- * dan sel yang sudah berisi huruf Mandarin dilewati.
+ * diubah ke "中文\n(English)", teks asli disimpan di catatan sel. Hanya sheet issue, baris data
+ * (mulai baris 9), kolom C/D/E/F/K. Dilewati: sel kosong, angka/tanggal, rumus, sel ber-dropdown,
+ * dan sel yang sudah berisi huruf Mandarin.
  */
 function translateSelection() {
   var ui = SpreadsheetApp.getUi();
@@ -716,27 +721,52 @@ function translateSelection() {
 
 function translateRange_(range) {
   var max = 300;
+  var sh = range.getSheet();
+  if (!isIssueSheet_(sh)) {
+    return { count: 0, message: 'Hanya untuk sheet issue (header di baris ' + ROW.HEADER + '). Sheet "' + sh.getName() + '" tidak diubah.' };
+  }
   if (range.getNumRows() * range.getNumColumns() > max) {
     return { count: 0, message: 'Terlalu banyak sel dipilih (maks ' + max + ').' };
   }
+  var cols = TRANSLATABLE_COLS.map(function (k) { return COL[k]; });
+  var r0 = range.getRow();
+  var c0 = range.getColumn();
   var vals = range.getValues();
   var formulas = range.getFormulas();
+  var rules = range.getDataValidations();
   var targets = [];
+  var skipped = 0;
   vals.forEach(function (row, i) {
     row.forEach(function (v, j) {
-      if (typeof v !== 'string' || !v.trim() || formulas[i][j] || /[一-鿿]/.test(v)) return;
+      if (typeof v !== 'string' || !v.trim() || formulas[i][j] || /[\u4e00-\u9fff]/.test(v)) return;
+      if (r0 + i < ROW.DATA_START || cols.indexOf(c0 + j) === -1 || rules[i][j]) { skipped++; return; }
       targets.push({ i: i, j: j, text: cleanLines_(v).join('\n') });
     });
   });
+  var note = skipped ? ' ' + skipped + ' sel dilewati (hanya kolom ' +
+    cols.map(colLetter_).join('/') + ' mulai baris ' + ROW.DATA_START + '; dropdown, nama PIC, header tidak diterjemahkan).' : '';
   if (!targets.length) {
-    return { count: 0, message: 'Tidak ada teks yang perlu diterjemahkan (sel kosong, angka, rumus, atau yang sudah berbahasa Mandarin dilewati).' };
+    return { count: 0, message: 'Tidak ada teks yang perlu diterjemahkan (sel kosong, angka, rumus, atau yang sudah berbahasa Mandarin dilewati).' + note };
   }
+  // Terjemahkan semua dulu; baru menulis kalau terjemahan berhasil.
   var en = translateTexts_(targets.map(function (t) { return t.text; }), 'id', 'en');
   var zh = translateTexts_(en, 'en', 'zh-CN').map(fixZh_);
+  var failed = [];
+  var count = 0;
   targets.forEach(function (t, k) {
-    range.getCell(t.i + 1, t.j + 1).setValue(asText_(bi_(zh[k], en[k]))).setNote(NOTE_PREFIX + t.text);
+    var cell = range.getCell(t.i + 1, t.j + 1);
+    try {
+      cell.setValue(asText_(bi_(zh[k], en[k]))).setNote(NOTE_PREFIX + t.text);
+      count++;
+    } catch (e) {
+      failed.push(cell.getA1Notation() + ': ' + (e.message || e));
+    }
   });
-  return { count: targets.length, message: targets.length + ' sel diterjemahkan ke 中文 + (English). Teks asli disimpan di catatan sel.' };
+  return {
+    count: count,
+    message: count + ' sel diterjemahkan ke 中文 + (English). Teks asli disimpan di catatan sel.' + note +
+      (failed.length ? '\nGagal ditulis: ' + failed.join('; ') : '')
+  };
 }
 
 // ======================= Sheet.gs =======================

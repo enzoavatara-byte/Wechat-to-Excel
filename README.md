@@ -91,6 +91,8 @@ PASTE teks WeChat → PERIKSA (centang, pilih Discipline, cek terjemahan) → IM
    berisi Root Cause, Solusi, dan semua kolom kosong lain per laporan, siap dikirim.
 7. Setelah dapat jawaban, ketik Root Cause/Solution dalam Bahasa Indonesia di E/F, pilih sel-selnya, lalu
    **WeChat Import → Terjemahkan sel terpilih (中文 + English)**. Teks asli disimpan di catatan sel.
+   Menu ini hanya mengubah kolom **C, D, E, F, K mulai baris 9** di sheet issue. H (dropdown), I (nama PIC),
+   angka, header, dan sel ber-dropdown selalu dilewati, jadi aman walau Anda memilih satu baris penuh.
 
 ### 3b. Terjemahan
 - **Format** sama dengan sheet manajer: Mandarin, lalu baris baru, lalu Inggris dalam kurung.
@@ -246,6 +248,7 @@ Field yang gagal terbaca **dikosongkan**, dan teks aslinya dicatat di catatan se
 
 | Gejala | Penyebab paling mungkin | Solusi |
 |---|---|---|
+| "The data you entered in cell H… violates the data validation rules" saat **Terjemahkan sel terpilih** | Bug versi sebelum `e3b0860`: menu ikut menerjemahkan H (dropdown) | Copy ulang `dist/Code.gs`. Kalau sebagian sel sempat berubah, cek catatan sel "Asli (ID): …" atau pakai Edit → Undo / Version history. Kalau I2:I5 (sumber dropdown) sempat ikut diterjemahkan, kembalikan ke Machine / Operation / Product Item / MES; `setup` akan menandai `✗` kalau masih beda |
 | **Tidak berubah setelah copy ulang kode** | (1) Web app `/exec` masih memakai versi deployment lama; (2) file lama dari `src/` (Config, Parser, Sheet, Ui, App, Styles) masih ada di proyek dan menimpa `Code.gs`; (3) editor belum disimpan / tab spreadsheet belum di-reload; (4) laporan yang sama di-paste ulang → ditandai duplikat & tidak dicentang, baris lama tidak berubah sendiri | Cek **versi** di kepala halaman (dan baris `Versi kode` di `setup`) = versi di `dist/Code.gs` (`APP_VERSION`). Web app: Deploy → Manage deployments → pensil → **New version**. Hapus semua file selain `Code.gs`, `Index`, `appsscript.json`. Simpan (Ctrl+S), reload tab. Baris lama hasil uji: hapus isi C:K lalu impor ulang |
 | Ragu setup sudah benar | – | **WeChat Import → Cek setup** (atau Run `setup`): semua baris harus `✓` |
 | Menu **WeChat Import** tidak muncul | Tab belum di-reload setelah paste kode, atau `onOpen` salah ketik | Reload tab spreadsheet; pastikan file `Ui` berisi fungsi `onOpen` |
