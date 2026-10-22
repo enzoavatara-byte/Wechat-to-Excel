@@ -80,7 +80,11 @@
   function loadInit(prefer) {
     return call('getInitData').then(function (d) {
       state.init = d;
-      $('ss-name').textContent = d.spreadsheetName;
+      $('ss-name').textContent = d.spreadsheetName + ' · versi ' + d.version;
+      if (d.version !== CLIENT_VERSION) {
+        flash('Versi Code.gs (' + d.version + ') berbeda dengan Index.html (' + CLIENT_VERSION + '). ' +
+          'Copy ulang KEDUA file dari dist/, simpan, lalu (web app) buat versi deployment baru.');
+      }
       var pick = prefer && d.sheets.indexOf(prefer) !== -1 ? prefer : d.defaultOther;
       $('other').innerHTML = d.sheets.map(function (n) {
         return '<option value="' + esc(n) + '"' + (n === pick ? ' selected' : '') + '>' + esc(n) + '</option>';

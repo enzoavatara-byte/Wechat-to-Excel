@@ -8,6 +8,7 @@
 'use strict';
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 
 const ROOT = path.join(__dirname, '..');
 const SRC = path.join(ROOT, 'src');
@@ -35,10 +36,24 @@ function buildIndex() {
   return '<!-- DIBUAT OTOMATIS dari src/ (npm run build). Jangan edit di sini. -->\n' + html;
 }
 
+/** Versi = 7 karakter hash isi src/: berubah setiap kali kode berubah, sama untuk Code.gs & Index.html. */
+function version() {
+  const files = GS_FILES.concat(['Index.html', 'Styles.html', 'App.html', 'appsscript.json']);
+  const h = crypto.createHash('sha1');
+  files.forEach((f) => h.update(read(f)));
+  return h.digest('hex').slice(0, 7);
+}
+
+function stamp(text, placeholder, v) {
+  if (!text.includes(placeholder)) throw new Error('Placeholder versi tidak ditemukan: ' + placeholder);
+  return text.replace(placeholder, placeholder.replace("'dev'", "'" + v + "'"));
+}
+
 function build() {
+  const v = version();
   return {
-    'Code.gs': buildCode(),
-    'Index.html': buildIndex(),
+    'Code.gs': stamp(buildCode(), "var APP_VERSION = 'dev';", v),
+    'Index.html': stamp(buildIndex(), "var CLIENT_VERSION = 'dev';", v),
     'appsscript.json': read('appsscript.json')
   };
 }
@@ -52,4 +67,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { build, DIST };
+module.exports = { build, version, DIST };

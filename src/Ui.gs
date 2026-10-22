@@ -25,6 +25,8 @@ function setup() {
   var ok = function (s) { lines.push('✓ ' + s); };
   var bad = function (s) { lines.push('✗ ' + s); problems++; };
 
+  ok('Versi kode: ' + APP_VERSION);
+
   var tz = Session.getScriptTimeZone();
   var oldTz = ss.getSpreadsheetTimeZone();
   if (oldTz !== tz) {
@@ -121,6 +123,7 @@ function getInitData() {
       return { project: k, sheet: routes[k], ok: sheets.indexOf(routes[k]) !== -1 };
     }),
     disciplines: DISCIPLINES,
-    headerRow: ROW.HEADER
+    headerRow: ROW.HEADER,
+    version: APP_VERSION
   };
 }

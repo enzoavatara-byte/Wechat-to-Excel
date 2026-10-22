@@ -8,7 +8,7 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
-const { build, DIST } = require('../scripts/build');
+const { build, version, DIST } = require('../scripts/build');
 const { readFixture } = require('./helpers');
 const { managerSpreadsheet, services } = require('./mock-sheets');
 
@@ -19,6 +19,13 @@ test('dist/ sinkron dengan src/ (kalau gagal: jalankan npm run build)', () => {
     assert.ok(fs.existsSync(file), 'dist/' + f + ' belum ada');
     assert.equal(fs.readFileSync(file, 'utf8'), out[f], 'dist/' + f + ' tidak sama dengan src/');
   }
+});
+
+test('versi di Code.gs dan Index.html sama dan bukan "dev"', () => {
+  const v = version();
+  assert.match(v, /^[0-9a-f]{7}$/);
+  assert.ok(fs.readFileSync(path.join(DIST, 'Code.gs'), 'utf8').includes("var APP_VERSION = '" + v + "';"));
+  assert.ok(fs.readFileSync(path.join(DIST, 'Index.html'), 'utf8').includes("var CLIENT_VERSION = '" + v + "';"));
 });
 
 test('dist/Index.html: Styles & App sudah di-inline, scriptlet mode tetap ada', () => {

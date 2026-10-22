@@ -3,6 +3,8 @@
  * File ini juga dimuat oleh test Node, jadi JANGAN panggil layanan Google di sini.
  */
 var APP_NAME = 'WeChat Import';
+// Diisi otomatis oleh `npm run build` (dist/). Tampil di UI & setup untuk memastikan kode terbaru yang jalan.
+var APP_VERSION = 'dev';
 
 // Struktur sheet manajer: header di baris 8, data mulai baris 9.
 var ROW = {

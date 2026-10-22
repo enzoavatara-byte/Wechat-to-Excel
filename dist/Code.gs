@@ -10,6 +10,8 @@
  * File ini juga dimuat oleh test Node, jadi JANGAN panggil layanan Google di sini.
  */
 var APP_NAME = 'WeChat Import';
+// Diisi otomatis oleh `npm run build` (dist/). Tampil di UI & setup untuk memastikan kode terbaru yang jalan.
+var APP_VERSION = 'ec1f8be';
 
 // Struktur sheet manajer: header di baris 8, data mulai baris 9.
 var ROW = {
@@ -1277,6 +1279,8 @@ function setup() {
   var ok = function (s) { lines.push('✓ ' + s); };
   var bad = function (s) { lines.push('✗ ' + s); problems++; };
 
+  ok('Versi kode: ' + APP_VERSION);
+
   var tz = Session.getScriptTimeZone();
   var oldTz = ss.getSpreadsheetTimeZone();
   if (oldTz !== tz) {
@@ -1373,6 +1377,7 @@ function getInitData() {
       return { project: k, sheet: routes[k], ok: sheets.indexOf(routes[k]) !== -1 };
     }),
     disciplines: DISCIPLINES,
-    headerRow: ROW.HEADER
+    headerRow: ROW.HEADER,
+    version: APP_VERSION
   };
 }

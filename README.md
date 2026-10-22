@@ -246,6 +246,7 @@ Field yang gagal terbaca **dikosongkan**, dan teks aslinya dicatat di catatan se
 
 | Gejala | Penyebab paling mungkin | Solusi |
 |---|---|---|
+| **Tidak berubah setelah copy ulang kode** | (1) Web app `/exec` masih memakai versi deployment lama; (2) file lama dari `src/` (Config, Parser, Sheet, Ui, App, Styles) masih ada di proyek dan menimpa `Code.gs`; (3) editor belum disimpan / tab spreadsheet belum di-reload; (4) laporan yang sama di-paste ulang → ditandai duplikat & tidak dicentang, baris lama tidak berubah sendiri | Cek **versi** di kepala halaman (dan baris `Versi kode` di `setup`) = versi di `dist/Code.gs` (`APP_VERSION`). Web app: Deploy → Manage deployments → pensil → **New version**. Hapus semua file selain `Code.gs`, `Index`, `appsscript.json`. Simpan (Ctrl+S), reload tab. Baris lama hasil uji: hapus isi C:K lalu impor ulang |
 | Ragu setup sudah benar | – | **WeChat Import → Cek setup** (atau Run `setup`): semua baris harus `✓` |
 | Menu **WeChat Import** tidak muncul | Tab belum di-reload setelah paste kode, atau `onOpen` salah ketik | Reload tab spreadsheet; pastikan file `Ui` berisi fungsi `onOpen` |
 | "Tidak ada sheet dengan header di baris 8" | Header B8:D8 berubah, atau script dibuat bukan dari spreadsheet ini | Cek B8 = `No.序号`, C8 = `Machine`, D8 = `Issue Description…`; buat script lewat Extensions → Apps Script di spreadsheet yang benar; atau buat sheet lewat **WeChat Import → Buat sheet baru** |
