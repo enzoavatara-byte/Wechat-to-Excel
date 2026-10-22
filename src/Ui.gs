@@ -6,6 +6,7 @@ function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu('WeChat Import')
     .addItem('Import laporan WeChat…', 'showImportDialog')
+    .addItem('Lengkapi Root Cause / Solution…', 'showCompleteDialog')
     .addItem('Buat sheet baru (format manajer)…', 'showNewSheetDialog')
     .addItem('Terjemahkan sel terpilih (中文 + English)', 'translateSelection')
     .addSeparator()
@@ -78,6 +79,10 @@ function setup() {
 
 function showImportDialog() {
   SpreadsheetApp.getUi().showModalDialog(page_('dialog').setWidth(1100).setHeight(760), APP_NAME);
+}
+
+function showCompleteDialog() {
+  SpreadsheetApp.getUi().showModalDialog(page_('complete').setWidth(1100).setHeight(760), APP_NAME + ': Lengkapi');
 }
 
 function showNewSheetDialog() {

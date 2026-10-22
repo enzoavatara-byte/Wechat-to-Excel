@@ -99,10 +99,10 @@ function normalizeText_(s) {
   return String(s == null ? '' : s)
     .replace(/\r\n?/g, '\n')
     // Karakter full-width dari IME Mandarin: ：／＠１８ -> :/@18
-    .replace(/[！-～]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); })
-    .replace(/[​-‍⁠﻿]/g, '')
-    // Spasi khusus (termasuk   yang dipakai WeChat setelah @mention) -> spasi biasa.
-    .replace(/[   -   　]/g, ' ');
+    .replace(/[\uFF01-\uFF5E]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); })
+    .replace(/[\u200B-\u200D\u2060\uFEFF]/g, '')
+    // Spasi khusus (termasuk \u2005 yang dipakai WeChat setelah @mention) -> spasi biasa.
+    .replace(/[\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]/g, ' ');
 }
 
 function tokenize_(text) {

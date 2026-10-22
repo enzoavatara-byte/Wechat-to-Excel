@@ -10,7 +10,9 @@
     sel: {},         // id -> dicentang?
     disc: {},        // id -> Discipline pilihan
     translate: true, // false setelah memilih "Lanjut tanpa terjemahan"
-    newSheetFrom: '' // 'menu' (dialog sendiri) atau 'paste' (dari tautan "+ Sheet baru")
+    newSheetFrom: '', // 'menu' (dialog sendiri) atau 'paste' (dari tautan "+ Sheet baru")
+    importView: 'paste', // langkah impor terakhir, dipulihkan saat kembali ke tab Impor
+    cmp: null        // hasil listIncomplete + filter sheet
   };
 
   // Pertanyaan untuk mentor per kolom kosong (Root Cause & Solution selalu ditanyakan).
@@ -56,12 +58,18 @@
     return list.map(function (y) { return '<span class="col-chip">' + esc(y.col) + '</span>'; }).join('');
   }
   function selectable(r) { return r.writable && !r.sheetError; }
+  function hasChinese(s) { return /[\u4e00-\u9fff]/.test(String(s || '')); }
 
   function show(view) {
     var order = ['paste', 'preview', 'result'];
-    order.concat('newsheet').forEach(function (v) { $('view-' + v).classList.toggle('hidden', v !== view); });
+    order.concat('newsheet', 'complete').forEach(function (v) { $('view-' + v).classList.toggle('hidden', v !== view); });
     $('actionbar').classList.toggle('hidden', view !== 'preview');
-    $('steps').classList.toggle('hidden', view === 'newsheet');
+    $('steps').classList.toggle('hidden', order.indexOf(view) === -1);
+    $('modes').classList.toggle('hidden', view === 'newsheet');
+    if (order.indexOf(view) !== -1) state.importView = view;
+    Array.prototype.forEach.call(document.querySelectorAll('#modes button'), function (b) {
+      b.classList.toggle('on', (b.getAttribute('data-mode') === 'complete') === (view === 'complete'));
+    });
     var idx = order.indexOf(view);
     Array.prototype.forEach.call(document.querySelectorAll('#steps li'), function (li) {
       var i = order.indexOf(li.getAttribute('data-step'));
@@ -74,6 +82,8 @@
   function boot() {
     if (APP_MODE === 'newsheet') openNewSheet('menu');
     loadInit().catch(function (e) { flash('Gagal memuat: ' + cleanErr(e)); });
+    if (APP_MODE === 'complete') openComplete();
+    else if (APP_MODE !== 'newsheet') loadComplete(); // hanya untuk angka di tab "Lengkapi"
   }
 
   /** Muat daftar sheet & rute proyek; `prefer` = sheet yang dipilih di "Sheet untuk proyek lain". */
@@ -279,6 +289,7 @@
     $('btn-back').disabled = true;
     call('importWeChat', state.text, state.other, list, { translate: state.translate }).then(function (res) {
       flash('');
+      loadComplete().catch(function () { /* angka di tab Lengkapi saja */ });
       renderResult(res);
       show('result');
     }).catch(function (e) { flash('Gagal menulis: ' + cleanErr(e)); })
@@ -326,6 +337,7 @@
       '<textarea id="mentor-text" class="mono">' + esc(mentorText(w)) + '</textarea></div>' : '';
 
     var actions = '<div class="end-actions">' +
+      (w.length ? '<button type="button" class="btn ghost" id="btn-to-complete">Lengkapi Root Cause / Solution →</button>' : '') +
       (APP_MODE === 'dialog' ? '<button type="button" class="btn ghost" id="btn-close">Tutup</button>' : '') +
       '<button type="button" class="btn primary" id="btn-again">Paste laporan berikutnya</button></div>';
 
@@ -425,7 +437,142 @@
     $('ns-done').classList.remove('hidden');
   }
 
+  // ---------- Lengkapi (E/F/H) ----------
+  function loadComplete() {
+    return call('listIncomplete').then(function (d) {
+      state.cmp = { rows: d.rows, total: d.total, url: d.url, translate: d.translate, sheets: d.sheets, disciplines: d.disciplines,
+        filter: state.cmp ? state.cmp.filter : '' };
+      $('cmp-badge').textContent = d.total ? d.total : '';
+      return d;
+    });
+  }
+
+  function openComplete() {
+    flash('');
+    show('complete');
+    $('cmp-title').textContent = 'Memuat…';
+    $('cmp-list').innerHTML = '<div class="loading">Membaca sheet…</div>';
+    loadComplete().then(renderComplete).catch(function (e) {
+      $('cmp-list').innerHTML = '';
+      flash('Gagal memuat daftar: ' + cleanErr(e));
+    });
+  }
+
+  function cmpRows() {
+    var f = state.cmp.filter;
+    return state.cmp.rows.filter(function (r) { return !f || r.sheet === f; });
+  }
+
+  function renderComplete() {
+    var c = state.cmp;
+    var open = c.rows.filter(function (r) { return r.need.length; }).length;
+    $('cmp-title').textContent = open ? open + ' baris perlu dilengkapi' : 'Semua baris sudah lengkap';
+    if (c.total > c.rows.length) $('cmp-title').textContent += ' (menampilkan ' + c.rows.length + ' terbaru dari ' + c.total + ')';
+    var counts = {};
+    c.rows.forEach(function (r) { counts[r.sheet] = (counts[r.sheet] || 0) + 1; });
+    $('cmp-sheet').innerHTML = '<option value="">Semua sheet</option>' + c.sheets.map(function (n) {
+      return '<option value="' + esc(n) + '"' + (n === c.filter ? ' selected' : '') + '>' + esc(n) + ' (' + (counts[n] || 0) + ')</option>';
+    }).join('');
+    var rows = cmpRows();
+    $('cmp-list').innerHTML = rows.length ? rows.map(cmpCard).join('')
+      : '<div class="card center muted">Tidak ada baris yang perlu dilengkapi' + (c.filter ? ' di sheet ini' : '') + '.</div>';
+  }
+
+  function cmpKey(r) { return r.sheet + '|' + r.row; }
+
+  function cmpText(label, name, value, r) {
+    if (hasChinese(value)) return biField(label, value, '');
+    return '<div class="field"><label class="k" for="' + name + '-' + r.row + '-' + esc(r.sheetId) + '">' + esc(label) + '</label>' +
+      '<textarea class="cmp-input" data-name="' + name + '" id="' + name + '-' + r.row + '-' + esc(r.sheetId) + '" rows="3" ' +
+      'placeholder="Tulis dalam Bahasa Indonesia…">' + esc(value) + '</textarea>' +
+      (value ? '<p class="hint">Belum diterjemahkan. Simpan untuk menerjemahkan.</p>' : '') + '</div>';
+  }
+
+  function cmpCard(r) {
+    var done = !r.need.length;
+    var head =
+      '<div class="rec-head static">' +
+        '<div class="when"><div class="time">No. ' + esc(r.no || '–') + '<span class="arrow">·</span>' + (r.date ? esc(r.date) : empty('tanggal ?')) +
+          (r.end ? ' ' + esc(r.end) : '') + '</div>' +
+          '<div class="meta">' + esc(r.sheet) + ' · baris ' + r.row + '</div></div>' +
+        '<div class="tags">' + (done ? '<span class="tag green">✓ Lengkap</span>'
+          : '<span class="tag">Perlu: ' + r.need.map(function (n) { return n.col; }).join(', ') + '</span>') +
+          '<a class="tag outline" href="' + esc(rowUrl(state.cmp.url, r)) + '" target="_blank" rel="noopener">Buka di sheet ↗</a></div>' +
+      '</div>';
+    var body = '<div class="rec-body">' + biField('Machine (C)', r.machine, r.machineOrig) +
+      biField('Deskripsi (D)', r.description, r.descOrig, 'wide') + '</div>';
+    var disc = isEmptyStr(r.discipline)
+      ? '<div class="field"><label class="k">Discipline (H)</label><select class="cmp-input disc is-empty" data-name="discipline">' +
+        '<option value="">— kosong —</option>' + state.cmp.disciplines.map(function (d) {
+          return '<option value="' + esc(d) + '">' + esc(d) + '</option>';
+        }).join('') + '</select></div>'
+      : field('Discipline (H)', r.discipline);
+    var form = '<div class="rec-body cmp-form">' +
+      cmpText('Root Cause (E)', 'rootCause', r.rootCause, r) + cmpText('Solution (F)', 'solution', r.solution, r) + disc + '</div>';
+    var foot = done ? '' : '<div class="rec-foot cmp-actions"><span class="cmp-status small"></span>' +
+      '<button type="button" class="btn primary sm cmp-save">' + (state.cmp.translate ? 'Simpan &amp; terjemahkan' : 'Simpan') + '</button></div>';
+    return '<article class="rec cmp ' + (done ? 'is-done' : 'is-on') + '" data-key="' + esc(cmpKey(r)) + '">' + head + body + form + foot + '</article>';
+  }
+
+  function isEmptyStr(s) { return !String(s || '').trim(); }
+
+  function saveCard(art) {
+    var r = state.cmp.rows.filter(function (x) { return cmpKey(x) === art.getAttribute('data-key'); })[0];
+    var btn = art.querySelector('.cmp-save');
+    var status = art.querySelector('.cmp-status');
+    if (!r || !btn || btn.disabled) return;
+    var item = { sheet: r.sheet, row: r.row,
+      expect: { machine: r.machine, description: r.description, rootCause: r.rootCause, solution: r.solution, discipline: r.discipline } };
+    Array.prototype.forEach.call(art.querySelectorAll('.cmp-input'), function (el) { item[el.getAttribute('data-name')] = el.value; });
+    if (isEmptyStr(item.rootCause) && isEmptyStr(item.solution) && !item.discipline) {
+      status.className = 'cmp-status small warn-text';
+      status.textContent = 'Isi Root Cause, Solution, atau Discipline dulu.';
+      return;
+    }
+    status.className = 'cmp-status small muted';
+    status.textContent = state.cmp.translate ? 'Menerjemahkan & menyimpan…' : 'Menyimpan…';
+    busy(btn, true, 'Menyimpan…');
+    call('saveCompletion', item).then(function (r2) {
+      state.cmp.rows = state.cmp.rows.map(function (x) { return cmpKey(x) === cmpKey(r2) ? r2 : x; });
+      var open = state.cmp.rows.filter(function (x) { return x.need.length; }).length;
+      state.cmp.total = Math.max(0, state.cmp.total - (r2.need.length ? 0 : 1));
+      $('cmp-badge').textContent = state.cmp.total || '';
+      var tmp = document.createElement('div');
+      tmp.innerHTML = cmpCard(r2);
+      var fresh = tmp.firstChild;
+      art.parentNode.replaceChild(fresh, art);
+      var st = fresh.querySelector('.cmp-status');
+      if (st) { st.className = 'cmp-status small ok-text'; st.textContent = '✓ Tersimpan. Masih perlu: ' + r2.need.map(function (n) { return n.col; }).join(', '); }
+      $('cmp-title').textContent = open ? open + ' baris perlu dilengkapi' : 'Semua baris sudah lengkap';
+    }).catch(function (e) {
+      busy(btn, false);
+      status.className = 'cmp-status small err-text';
+      status.textContent = cleanErr(e);
+    });
+  }
+
   // ---------- event ----------
+  $('modes').addEventListener('click', function (e) {
+    var m = e.target.closest('button[data-mode]');
+    if (!m) return;
+    if (m.getAttribute('data-mode') === 'complete') openComplete();
+    else { flash(''); show(state.importView); }
+  });
+  $('cmp-reload').addEventListener('click', openComplete);
+  $('cmp-sheet').addEventListener('change', function () { state.cmp.filter = this.value; renderComplete(); });
+  $('cmp-list').addEventListener('click', function (e) {
+    if (e.target.classList.contains('cmp-save')) saveCard(e.target.closest('.rec'));
+  });
+  $('cmp-list').addEventListener('input', function (e) {
+    var st = e.target.classList.contains('cmp-input') && e.target.closest('.rec').querySelector('.cmp-status');
+    if (st && !st.classList.contains('muted')) st.textContent = '';
+  });
+  $('cmp-list').addEventListener('keydown', function (e) {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && e.target.classList.contains('cmp-input')) {
+      e.preventDefault();
+      saveCard(e.target.closest('.rec'));
+    }
+  });
   $('flash').addEventListener('click', function (e) {
     var id = e.target.id;
     if (id !== 'btn-no-translate' && id !== 'btn-retry-translate') return;
@@ -472,6 +619,7 @@
     var id = e.target.id;
     if (id === 'btn-copy') copyText($('mentor-text'), e.target);
     else if (id === 'btn-close') google.script.host.close();
+    else if (id === 'btn-to-complete') openComplete();
     else if (id === 'btn-again') {
       state.preview = null;
       state.translate = true;

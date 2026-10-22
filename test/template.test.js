@@ -9,7 +9,7 @@ const assert = require('node:assert/strict');
 const { loadGas, plain, readFixture } = require('./helpers');
 const { MockSheet, MockSpreadsheet, managerSpreadsheet, services } = require('./mock-sheets');
 
-const FILES = ['Config.gs', 'Parser.gs', 'Translate.gs', 'Sheet.gs', 'Template.gs', 'Ui.gs'];
+const FILES = ['Config.gs', 'Parser.gs', 'Translate.gs', 'Sheet.gs', 'Template.gs', 'Complete.gs', 'Ui.gs'];
 const SAMPLE = readFixture('sample.txt');
 
 function load(ss) {

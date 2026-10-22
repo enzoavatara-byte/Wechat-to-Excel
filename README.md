@@ -26,6 +26,7 @@ PASTE teks WeChat → PERIKSA (centang, pilih Discipline, cek terjemahan) → IM
 | `src/Translate.gs` | Terjemahan ke format manajer `中文\n(English)` + menu *Terjemahkan sel terpilih* |
 | `src/Parser.gs` | Fungsi murni (tanpa `SpreadsheetApp`): `parseReports`, `parseOne`, `parseDateTime`, pemetaan ke kolom |
 | `src/Sheet.gs` | `findNextRow`, `writeRecord`, `previewWeChat`, `importWeChat`, pengaman sheet, deteksi duplikat |
+| `src/Complete.gs` | Tab **Lengkapi**: isi Root Cause/Solution/Discipline dari web app, langsung diterjemahkan |
 | `src/Template.gs` | Menu **Buat sheet baru**: format sheet manajer + `createIssueSheet` |
 | `src/Ui.gs` | `setup` (izin + cek konfigurasi), `onOpen` (menu), `showImportDialog`, `showNewSheetDialog`, `doGet` (web app), `getInitData` |
 | `src/Index.html`, `App.html`, `Styles.html` | UI: satu halaman, 3 langkah. Dipakai di dialog menu **dan** web app |
@@ -89,10 +90,26 @@ PASTE teks WeChat → PERIKSA (centang, pilih Discipline, cek terjemahan) → IM
 5. **Impor N laporan.**
 6. Halaman **Selesai**: link langsung ke tiap baris, dan **Pertanyaan untuk mentor** (tombol *Salin*)
    berisi Root Cause, Solusi, dan semua kolom kosong lain per laporan, siap dikirim.
-7. Setelah dapat jawaban, ketik Root Cause/Solution dalam Bahasa Indonesia di E/F, pilih sel-selnya, lalu
+7. Setelah dapat jawaban mentor: tab **Lengkapi** di web app (bagian 3c). Ketik dalam Bahasa Indonesia →
+   **Simpan & terjemahkan**. Tidak perlu membuka sheet atau memakai menu.
+   Alternatif kalau mengetik langsung di sheet: pilih sel-selnya lalu
    **WeChat Import → Terjemahkan sel terpilih (中文 + English)**. Teks asli disimpan di catatan sel.
    Menu ini hanya mengubah kolom **C, D, E, F, K mulai baris 9** di sheet issue. H (dropdown), I (nama PIC),
    angka, header, dan sel ber-dropdown selalu dilewati, jadi aman walau Anda memilih satu baris penuh.
+
+### 3c. Lengkapi dari web app (tanpa menu)
+Tab **Lengkapi** di kepala halaman (angka = jumlah baris yang belum lengkap), tombol
+**Lengkapi Root Cause / Solution →** di halaman Selesai, atau menu **WeChat Import → Lengkapi Root Cause / Solution…**.
+- Menampilkan semua baris (C atau D terisi) di semua sheet issue yang **E, F, atau H masih kosong**, atau E/F berisi
+  teks Bahasa Indonesia yang belum diterjemahkan. Terbaru dulu; bisa difilter per sheet.
+- Tiap kartu: Machine & Deskripsi (dengan teks asli), kolom isian Root Cause (E) dan Solution (F), dan pilihan
+  Discipline (H) kalau masih kosong. **Simpan & terjemahkan** (atau Ctrl+Enter): teks Indonesia langsung jadi
+  `中文\n(English)` di sheet, teks asli di catatan sel. Boleh isi E dulu, F menyusul.
+- Teks yang diketik sudah dalam huruf Mandarin ditulis apa adanya (tanpa terjemahan).
+- Pengaman: isi berbahasa Mandarin (mis. dari manajer) **tidak pernah ditimpa**; kalau baris itu berubah sejak daftar
+  dimuat (mis. ada baris disisipkan), tidak ada yang ditulis dan Anda diminta *Muat ulang*; kalau terjemahan gagal,
+  tidak ada yang ditulis.
+- Tanggal baris lama manajer yang tersimpan sebagai angka (tampil `46313`) ditampilkan sebagai `2026/10/18`.
 
 ### 3b. Terjemahan
 - **Format** sama dengan sheet manajer: Mandarin, lalu baris baru, lalu Inggris dalam kurung.
@@ -274,6 +291,9 @@ npm run build   # buat ulang dist/ setelah mengubah src/
 - `test/sheet.test.js`: penulisan dengan mock Sheets yang meniru file manajer (baris tujuan, nomor B,
   tanpa warna, pengaman sheet, duplikat, urutan tulis) dan terjemahan dengan penerjemah palsu (format
   `中文\n(English)`, TERMS, ZH_FIXES, satu panggilan per bahasa, gagal → tidak menulis, menu terjemahkan sel).
+- `test/complete.test.js`: tab *Lengkapi* (daftar & urutan termasuk tanggal angka lama, simpan + terjemah E/F
+  sekaligus, isi bertahap, teks Mandarin apa adanya, tidak menimpa isi Mandarin, baris berubah, terjemahan gagal,
+  Discipline di luar dropdown).
 - `test/template.test.js`: menu *Buat sheet baru* (isi & struktur sama dengan file manajer, Revision_History,
   rute kode proyek termasuk rename/hapus sheet, nama/kode dobel ditolak, spreadsheet kosong).
 - `test/dist.test.js`: `dist/` harus sama dengan hasil build dari `src/` (gagal kalau lupa `npm run build`),

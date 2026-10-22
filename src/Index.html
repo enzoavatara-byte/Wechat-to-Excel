@@ -19,6 +19,10 @@
           <div class="sub" id="ss-name">Memuat…</div>
         </div>
       </div>
+      <nav class="modes" id="modes" aria-label="Mode">
+        <button type="button" data-mode="import" class="on">Impor</button>
+        <button type="button" data-mode="complete">Lengkapi <span class="count" id="cmp-badge"></span></button>
+      </nav>
       <ol class="steps" id="steps">
         <li data-step="paste" class="on"><span>1</span>Paste</li>
         <li data-step="preview"><span>2</span>Periksa</li>
@@ -87,6 +91,24 @@
 
     <!-- 3. Selesai -->
     <section id="view-result" class="hidden"></section>
+
+    <!-- Lengkapi: isi E/F/H yang masih kosong, langsung diterjemahkan -->
+    <section id="view-complete" class="hidden">
+      <div class="card summary">
+        <div class="sum-head">
+          <div>
+            <div class="sum-big" id="cmp-title">Memuat…</div>
+            <div class="muted small">Tulis Root Cause &amp; Solution dalam Bahasa Indonesia (jawaban mentor). Saat disimpan, langsung
+              diterjemahkan ke 中文 + (English) dan ditulis ke sheet; teks asli disimpan di catatan sel.</div>
+          </div>
+          <div class="cmp-tools">
+            <select id="cmp-sheet" aria-label="Filter sheet"></select>
+            <button type="button" class="btn ghost sm" id="cmp-reload">Muat ulang</button>
+          </div>
+        </div>
+      </div>
+      <div id="cmp-list"></div>
+    </section>
 
     <!-- Buat sheet baru (menu, atau "+ Sheet baru") -->
     <section id="view-newsheet" class="hidden">
