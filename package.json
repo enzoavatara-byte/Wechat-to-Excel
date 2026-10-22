@@ -3,6 +3,7 @@
   "private": true,
   "description": "Laporan WeChat ①–⑨ -> sheet Statistical Analysis of Issues (Google Apps Script)",
   "scripts": {
+    "build": "node scripts/build.js",
     "test": "node --test test/*.test.js"
   }
 }

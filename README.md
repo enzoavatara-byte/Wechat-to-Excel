@@ -2,7 +2,7 @@
 
 Mengubah laporan masalah produksi dari grup WeChat (format ①–⑨) menjadi baris di spreadsheet
 **Statistical Analysis of Issues Reported from Production**. Google Apps Script + Google Sheets.
-Kode di-paste manual ke editor Apps Script (tanpa clasp).
+Kode di-paste manual ke editor Apps Script (tanpa clasp): **cukup 2 file dari folder [`dist/`](dist/)**.
 
 ```
 PASTE teks WeChat → PERIKSA (centang, pilih Discipline) → IMPOR → lengkapi sel kuning (tanya mentor)
@@ -16,6 +16,10 @@ PASTE teks WeChat → PERIKSA (centang, pilih Discipline) → IMPOR → lengkapi
 
 | File | Isi |
 |---|---|
+| **`dist/Code.gs`** | **Yang di-paste ke Apps Script.** Semua kode server (Config + Parser + Sheet + Ui) dalam satu file |
+| **`dist/Index.html`** | **Yang di-paste ke Apps Script.** UI lengkap (Index + Styles + App) dalam satu file |
+| `dist/appsscript.json` | Manifest |
+| `src/` | Sumber asli, dipecah per bagian. `dist/` dibuat dari sini dengan `npm run build`. **Jangan edit `dist/` langsung** |
 | `src/Config.gs` | **Semua** konfigurasi: sheet per proyek, `DISCIPLINE_MAP`, jenis yang dilewati, kolom, warna, format |
 | `src/Parser.gs` | Fungsi murni (tanpa `SpreadsheetApp`): `parseReports`, `parseOne`, `parseDateTime`, pemetaan ke kolom |
 | `src/Sheet.gs` | `findNextRow`, `writeRecord`, `previewWeChat`, `importWeChat`, pengaman sheet, deteksi duplikat |
@@ -36,12 +40,15 @@ PASTE teks WeChat → PERIKSA (centang, pilih Discipline) → IMPOR → lengkapi
 2. **Timezone spreadsheet:** File → Settings → Time zone → **(GMT+08:00) China Standard Time** (`Asia/Shanghai`).
    Catatan: tool menulis tanggal & jam sebagai nomor seri, jadi hasilnya tidak bergeser walau timezone berbeda.
    Setting ini hanya supaya sama dengan manifest.
-3. Di spreadsheet itu: **Extensions → Apps Script**. Hapus isi `Code.gs` bawaan (atau hapus file-nya).
-4. Buat file sesuai folder `src/`, **nama persis sama tanpa ekstensi**, lalu copy-paste isinya:
-   - **+ → Script**: `Config`, `Parser`, `Sheet`, `Ui`
-   - **+ → HTML**: `Index`, `App`, `Styles`
+3. Di spreadsheet itu: **Extensions → Apps Script**.
+4. Paste **2 file** dari folder [`dist/`](dist/) (di GitHub: buka file → tombol *Copy raw file*):
+   - **`Code.gs`** (sudah ada bawaan): hapus semua isinya → paste isi [`dist/Code.gs`](dist/Code.gs).
+   - **+ → HTML** → beri nama **`Index`** → hapus isinya → paste isi [`dist/Index.html`](dist/Index.html).
+
+   Jangan campur dengan file dari `src/`: kalau fungsi yang sama ada di dua file, yang terakhir dimuat yang
+   dipakai, dan itu membingungkan saat debug.
 5. **Project Settings** (ikon gerigi) → centang **Show "appsscript.json" manifest file in editor** →
-   kembali ke Editor, ganti isi `appsscript.json` dengan `src/appsscript.json`. Simpan (Ctrl+S).
+   kembali ke Editor, ganti isi `appsscript.json` dengan [`dist/appsscript.json`](dist/appsscript.json). Simpan (Ctrl+S).
 6. Reload tab spreadsheet → menu **WeChat Import** muncul di menu bar.
 7. Klik **WeChat Import → Import laporan WeChat…**. Pertama kali, Google meminta izin:
    Continue → pilih akun → *"Google hasn't verified this app"* → Advanced → Go to … (unsafe) → Allow.
@@ -51,7 +58,7 @@ PASTE teks WeChat → PERIKSA (centang, pilih Discipline) → IMPOR → lengkapi
    Execute as: **Me** · Who has access: **Only myself** → Deploy → salin URL berakhiran `/exec`, bookmark.
 
 ### Update kode
-- Paste ulang file yang berubah → Simpan. Menu/dialog langsung memakai kode baru.
+- Paste ulang `dist/Code.gs` dan/atau `dist/Index.html` → Simpan. Menu/dialog langsung memakai kode baru.
 - Web app: **Deploy → Manage deployments** → ikon pensil → Version: **New version** → Deploy.
   Jangan "New deployment" (URL-nya berubah).
 
@@ -179,13 +186,16 @@ Field yang gagal terbaca **dikosongkan + kuning**, dan teks aslinya dicatat di N
 ## 9. Test
 
 ```bash
-npm test     # node --test test/*.test.js (Node 18+), tanpa dependency
+npm test        # node --test test/*.test.js (Node 18+), tanpa dependency
+npm run build   # buat ulang dist/ setelah mengubah src/
 ```
 
 - `test/parser.test.js`: 5 laporan asli di `test/fixtures/sample.txt` + kasus rusak (field hilang, tanggal
   salah, tanpa `:`, teks tanpa ①–⑨, ⑨ beda, ⑧ < ④, lewat tengah malam, duplikat).
 - `test/sheet.test.js`: penulisan dengan mock Sheets yang meniru file manajer (baris tujuan, nomor B,
   kuning, pengaman sheet, duplikat, urutan tulis).
+- `test/dist.test.js`: `dist/` harus sama dengan hasil build dari `src/` (gagal kalau lupa `npm run build`),
+  dan `dist/Code.gs` harus jalan sendirian.
 
 Hasil yang diharapkan dari fixture:
 
