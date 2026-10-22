@@ -303,8 +303,9 @@ function projectKey_(s) {
   return String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
 }
 
-function targetSheetName_(rec, otherSheet) {
-  return PROJECT_SHEET[projectKey_(rec.project)] || otherSheet;
+/** `routes` = kode proyek -> sheet (lihat projectRoutes_); default PROJECT_SHEET dari Config. */
+function targetSheetName_(rec, otherSheet, routes) {
+  return (routes || PROJECT_SHEET)[projectKey_(rec.project)] || otherSheet;
 }
 
 /**

@@ -9,7 +9,7 @@ const { loadGas, plain, readFixture } = require('./helpers');
 const { managerSpreadsheet, services } = require('./mock-sheets');
 
 const SAMPLE = readFixture('sample.txt');
-const FILES = ['Config.gs', 'Parser.gs', 'Sheet.gs', 'Ui.gs'];
+const FILES = ['Config.gs', 'Parser.gs', 'Sheet.gs', 'Template.gs', 'Ui.gs'];
 const YELLOW = '#FFF2CC';
 
 function setup() {

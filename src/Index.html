@@ -40,7 +40,10 @@
 
         <div class="opts">
           <div>
-            <label for="other">Sheet untuk proyek lain</label>
+            <div class="label-row">
+              <label for="other">Sheet untuk proyek lain</label>
+              <button type="button" class="link small" id="btn-new-sheet">+ Sheet baru</button>
+            </div>
             <select id="other" disabled><option>Memuat…</option></select>
           </div>
           <div>
@@ -83,6 +86,38 @@
 
     <!-- 3. Selesai -->
     <section id="view-result" class="hidden"></section>
+
+    <!-- Buat sheet baru (menu, atau "+ Sheet baru") -->
+    <section id="view-newsheet" class="hidden">
+      <div class="card narrow">
+        <h1>Buat sheet baru</h1>
+        <p class="muted lead">Format sama dengan sheet manajer (“LImo 7 list”): header bilingual di baris 8,
+          Status Overview, warna, lebar kolom, dropdown Discipline H9:H35, nomor 1–14, dan rumus aslinya.</p>
+        <form id="ns-form" novalidate>
+          <div class="form-grid">
+            <div>
+              <label for="ns-name">Nama sheet</label>
+              <input type="text" id="ns-name" maxlength="100" autocomplete="off" placeholder="mis. L7 list">
+            </div>
+            <div>
+              <label for="ns-project">Nama proyek (teks besar di B4)</label>
+              <input type="text" id="ns-project" maxlength="100" autocomplete="off" placeholder="mis. Limo 7">
+              <p class="hint">Kosong = sama dengan nama sheet.</p>
+            </div>
+            <div>
+              <label for="ns-code">Kode proyek ② <span class="optional">(opsional)</span></label>
+              <input type="text" id="ns-code" maxlength="40" autocomplete="off" placeholder="mis. L7">
+              <p class="hint" id="ns-code-hint"></p>
+            </div>
+          </div>
+          <div class="actions">
+            <button type="button" class="btn ghost" id="ns-cancel">Batal</button>
+            <button type="submit" class="btn primary" id="ns-submit">Buat sheet</button>
+          </div>
+        </form>
+        <div id="ns-done" class="hidden"></div>
+      </div>
+    </section>
   </main>
 
   <div class="actionbar hidden" id="actionbar">

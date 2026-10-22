@@ -23,10 +23,11 @@ PASTE teks WeChat → PERIKSA (centang, pilih Discipline) → IMPOR → lengkapi
 | `src/Config.gs` | **Semua** konfigurasi: sheet per proyek, `DISCIPLINE_MAP`, jenis yang dilewati, kolom, warna, format |
 | `src/Parser.gs` | Fungsi murni (tanpa `SpreadsheetApp`): `parseReports`, `parseOne`, `parseDateTime`, pemetaan ke kolom |
 | `src/Sheet.gs` | `findNextRow`, `writeRecord`, `previewWeChat`, `importWeChat`, pengaman sheet, deteksi duplikat |
-| `src/Ui.gs` | `setup` (izin + cek konfigurasi), `onOpen` (menu), `showImportDialog`, `doGet` (web app), `getInitData` |
+| `src/Template.gs` | Menu **Buat sheet baru**: format sheet manajer + `createIssueSheet` |
+| `src/Ui.gs` | `setup` (izin + cek konfigurasi), `onOpen` (menu), `showImportDialog`, `showNewSheetDialog`, `doGet` (web app), `getInitData` |
 | `src/Index.html`, `App.html`, `Styles.html` | UI: satu halaman, 3 langkah. Dipakai di dialog menu **dan** web app |
 | `src/appsscript.json` | Manifest: timezone `Asia/Shanghai`, runtime V8, izin minimum |
-| `test/` | Test Node tanpa Google: parser + penulisan sheet dengan mock |
+| `test/` | Test Node tanpa Google: parser, penulisan sheet, pembuatan sheet baru (dengan mock) |
 
 ---
 
@@ -37,6 +38,8 @@ PASTE teks WeChat → PERIKSA (centang, pilih Discipline) → IMPOR → lengkapi
 1. **Convert .xlsx ke Google Sheets.** Upload file ke Google Drive → buka → **File → Save as Google Sheets**.
    Kerjakan di file Google Sheets hasilnya. (File .xlsx yang dibuka langsung masih "Office mode",
    menu Extensions → Apps Script tidak tersedia.)
+   *Mulai dari spreadsheet kosong juga bisa:* lewati langkah ini, lalu setelah setup buat sheet lewat
+   **WeChat Import → Buat sheet baru** (bagian 3a).
 2. Di spreadsheet itu: **Extensions → Apps Script**.
 3. Paste **2 file** dari folder [`dist/`](dist/) (di GitHub: buka file → tombol *Copy raw file*):
    - **`Code.gs`** (sudah ada bawaan): hapus semua isinya → paste isi [`dist/Code.gs`](dist/Code.gs).
@@ -82,6 +85,31 @@ PASTE teks WeChat → PERIKSA (centang, pilih Discipline) → IMPOR → lengkapi
 6. Halaman **Selesai**: link langsung ke tiap baris, dan **Pertanyaan untuk mentor** (tombol *Salin*)
    berisi Root Cause, Solusi, dan semua sel kuning lain per laporan, siap dikirim.
 7. Setelah dapat jawaban, isi sel kuning lalu hapus warnanya (Fill color → None).
+
+### 3a. Buat sheet baru (format manajer)
+Menu **WeChat Import → Buat sheet baru (format manajer)…**, atau tautan **+ Sheet baru** di sebelah
+"Sheet untuk proyek lain". Isi:
+- **Nama sheet** (wajib, tidak boleh sama dengan sheet yang sudah ada).
+- **Nama proyek**: teks besar di B4. Kosong = sama dengan nama sheet.
+- **Kode proyek ②** (opsional), mis. `L7`: laporan dengan `②Nama proyek: L7` (huruf besar/kecil, spasi,
+  strip diabaikan) otomatis masuk ke sheet ini. Kode disimpan di sheet itu sendiri (metadata tersembunyi),
+  jadi tetap jalan walau sheet di-rename, dan hilang kalau sheet dihapus. Satu kode hanya untuk satu sheet.
+
+Yang dibuat **sama persis dengan "LImo 7 list"** milik manajer (dicek sel per sel terhadap file xlsx):
+header bilingual baris 8, Status Overview G1:I5 + rumus `COUNTIF` aslinya, legenda A1:A5, judul B6:G6,
+pita abu-abu baris 6–7, warna, font, rata, wrap, garis, lebar kolom, tinggi baris 1–8, freeze baris 8,
+gridline tersembunyi, warna tab, nomor 1–14 di B9:B22, rumus `Total tasks` `=COUNT(B9:B204)-3`,
+dropdown Discipline H9:H35 (dari I2:I5), dan conditional format N/A/G/Y/R di H9:H35.
+
+Kalau sheet **Revision_History** belum ada, ikut dibuat (judul B6 membaca nomor revisinya) dengan format aslinya,
+**hanya header**: riwayat revisi manajer tidak disalin, jadi judulnya "REV 0".
+
+Yang **tidak** bisa sama persis:
+- **Zoom 90%** tidak bisa diatur lewat Apps Script (atur manual: View → Zoom).
+- **Font 宋体 (SimSun)** diset, tapi tampil sebagai font pengganti di komputer yang tidak punya SimSun.
+- **Lebar kolom** dikonversi dari satuan Excel (× 7 px), bisa beda beberapa piksel dari hasil convert Google.
+- **Format baris data**: baris terisi di file manajer tidak konsisten (font 10/11, ada yang tebal). Dipakai satu
+  format seragam yang paling sering dipakai: SimSun 10 (H & J 11), rata tengah, D/E/K rata kiri, wrap.
 
 ---
 
@@ -131,7 +159,7 @@ Field yang gagal terbaca **dikosongkan + kuning**, dan teks aslinya dicatat di N
 
 | Nama | Gunanya |
 |---|---|
-| `PROJECT_SHEET` | Proyek → sheet. Kunci huruf besar tanpa spasi/strip (`'E245'`) |
+| `PROJECT_SHEET` | Proyek → sheet. Kunci huruf besar tanpa spasi/strip (`'E245'`). Menang atas kode dari menu *Buat sheet baru*, kecuali sheet-nya tidak ada |
 | `DISCIPLINE_MAP` | Jenis ⑥-1 → Discipline. **Tambahkan hanya yang sudah pasti** |
 | `SKIP_TYPES` | Jenis ⑥-1 yang default tidak dicentang (`'changeover'`) |
 | `DISCIPLINES` | Harus sama persis dengan dropdown di sheet (`I2:I5`) |
@@ -166,7 +194,10 @@ Field yang gagal terbaca **dikosongkan + kuning**, dan teks aslinya dicatat di N
 5. **Kolom J baris lama** tersimpan sebagai angka berformat *General* (tampil `46313`). Baris dari tool tampil
    `2026/10/20`. Tool tidak mengubah baris lama.
 6. **F5 "Total tasks"** = `COUNT(B9:B204)-3` menghitung nomor yang sudah diisi di muka (sekarang 11, padahal
-   isinya 9). Itu rumus sheet manajer, bukan dari tool.
+   isinya 9). Itu rumus sheet manajer, bukan dari tool. Sheet dari menu *Buat sheet baru* **sengaja** memakai
+   rumus & nomor 1–14 yang sama (keputusan: sama persis), jadi sheet kosong pun menunjukkan 11.
+8. **Baris 36 dst.** di sheet manajer maupun sheet buatan menu tidak punya garis & dropdown. Tool tetap menulis
+   ke sana, tapi tanpa format.
 7. **Web app "Only myself"**: hanya pemilik yang bisa membuka. Kalau orang lain perlu memakainya, mereka butuh
    akses Editor ke spreadsheet + deployment *Execute as: User accessing*, dengan risiko yang sama seperti proyek MTTR.
 
@@ -178,7 +209,7 @@ Field yang gagal terbaca **dikosongkan + kuning**, dan teks aslinya dicatat di N
 |---|---|---|
 | Ragu setup sudah benar | – | **WeChat Import → Cek setup** (atau Run `setup`): semua baris harus `✓` |
 | Menu **WeChat Import** tidak muncul | Tab belum di-reload setelah paste kode, atau `onOpen` salah ketik | Reload tab spreadsheet; pastikan file `Ui` berisi fungsi `onOpen` |
-| "Tidak ada sheet dengan header di baris 8" | Header B8:D8 berubah, atau script dibuat bukan dari spreadsheet ini | Cek B8 = `No.序号`, C8 = `Machine`, D8 = `Issue Description…`; buat script lewat Extensions → Apps Script di spreadsheet yang benar |
+| "Tidak ada sheet dengan header di baris 8" | Header B8:D8 berubah, atau script dibuat bukan dari spreadsheet ini | Cek B8 = `No.序号`, C8 = `Machine`, D8 = `Issue Description…`; buat script lewat Extensions → Apps Script di spreadsheet yang benar; atau buat sheet lewat **WeChat Import → Buat sheet baru** |
 | "Sheet "Geely list (2)" tidak ditemukan" | Nama sheet berubah | Sesuaikan `PROJECT_SHEET` di `Config.gs` |
 | "…violates the data validation rules" di H | `DISCIPLINES` ≠ isi dropdown `I2:I5` | Samakan persis (huruf besar/kecil & spasi) |
 | "Tidak ada laporan terdeteksi" | Simbol ①–⑨ hilang (mis. teks hasil OCR/screenshot) | Copy teks asli dari WeChat |
@@ -199,6 +230,8 @@ npm run build   # buat ulang dist/ setelah mengubah src/
   salah, tanpa `:`, teks tanpa ①–⑨, ⑨ beda, ⑧ < ④, lewat tengah malam, duplikat).
 - `test/sheet.test.js`: penulisan dengan mock Sheets yang meniru file manajer (baris tujuan, nomor B,
   kuning, pengaman sheet, duplikat, urutan tulis).
+- `test/template.test.js`: menu *Buat sheet baru* (isi & struktur sama dengan file manajer, Revision_History,
+  rute kode proyek termasuk rename/hapus sheet, nama/kode dobel ditolak, spreadsheet kosong).
 - `test/dist.test.js`: `dist/` harus sama dengan hasil build dari `src/` (gagal kalau lupa `npm run build`),
   dan `dist/Code.gs` harus jalan sendirian.
 

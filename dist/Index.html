@@ -69,10 +69,11 @@
   .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); padding: 20px; margin-bottom: 14px; }
   .lead { margin: 0 0 14px; max-width: 70ch; }
   label, .label { display: block; font-weight: 600; font-size: 12.5px; color: var(--muted); margin-bottom: 6px; }
-  textarea, select { width: 100%; font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line-strong); border-radius: 10px; }
+  textarea, select, input[type=text] { width: 100%; font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line-strong); border-radius: 10px; }
+  input[type=text] { padding: 9px 12px; background: var(--card); }
   textarea { min-height: 280px; padding: 12px 14px; font-size: 13px; line-height: 1.6; resize: vertical; }
   select { padding: 8px 10px; background-color: var(--card); }
-  textarea:focus, select:focus, .btn:focus-visible, .link:focus-visible, input:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; border-color: transparent; }
+  textarea:focus, select:focus, input[type=text]:focus, .btn:focus-visible, .link:focus-visible, input:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; border-color: transparent; }
   textarea::placeholder { color: var(--faint); }
 
   .opts { display: grid; grid-template-columns: minmax(0, 280px) 1fr; gap: 16px 24px; margin-top: 16px; }
@@ -93,6 +94,18 @@
   .btn.is-busy::before { content: ""; width: 14px; height: 14px; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; animation: spin .7s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
   .link { background: none; border: 0; padding: 0; font: inherit; color: var(--primary); cursor: pointer; font-weight: 600; }
+
+  .label-row { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  .link.small { font-size: 12.5px; }
+  .hint { color: var(--faint); font-size: 12px; margin: 5px 0 0; }
+  .optional { font-weight: 400; color: var(--faint); }
+  .narrow { max-width: 640px; margin-left: auto; margin-right: auto; }
+  .form-grid { display: grid; gap: 16px; margin-top: 4px; }
+  .done-head { display: flex; align-items: center; gap: 14px; margin-bottom: 12px; }
+  .done-list { margin: 0 0 4px; padding-left: 20px; color: var(--muted); }
+  .done-list li + li { margin-top: 6px; }
+  .done-list b { color: var(--text); }
+  body.mode-newsheet .steps { display: none; }
 
   .help summary { cursor: pointer; font-weight: 600; color: var(--muted); }
   .help ul { margin: 12px 0 0; padding-left: 20px; color: var(--muted); }
@@ -240,7 +253,10 @@
 
         <div class="opts">
           <div>
-            <label for="other">Sheet untuk proyek lain</label>
+            <div class="label-row">
+              <label for="other">Sheet untuk proyek lain</label>
+              <button type="button" class="link small" id="btn-new-sheet">+ Sheet baru</button>
+            </div>
             <select id="other" disabled><option>Memuat…</option></select>
           </div>
           <div>
@@ -283,6 +299,38 @@
 
     <!-- 3. Selesai -->
     <section id="view-result" class="hidden"></section>
+
+    <!-- Buat sheet baru (menu, atau "+ Sheet baru") -->
+    <section id="view-newsheet" class="hidden">
+      <div class="card narrow">
+        <h1>Buat sheet baru</h1>
+        <p class="muted lead">Format sama dengan sheet manajer (“LImo 7 list”): header bilingual di baris 8,
+          Status Overview, warna, lebar kolom, dropdown Discipline H9:H35, nomor 1–14, dan rumus aslinya.</p>
+        <form id="ns-form" novalidate>
+          <div class="form-grid">
+            <div>
+              <label for="ns-name">Nama sheet</label>
+              <input type="text" id="ns-name" maxlength="100" autocomplete="off" placeholder="mis. L7 list">
+            </div>
+            <div>
+              <label for="ns-project">Nama proyek (teks besar di B4)</label>
+              <input type="text" id="ns-project" maxlength="100" autocomplete="off" placeholder="mis. Limo 7">
+              <p class="hint">Kosong = sama dengan nama sheet.</p>
+            </div>
+            <div>
+              <label for="ns-code">Kode proyek ② <span class="optional">(opsional)</span></label>
+              <input type="text" id="ns-code" maxlength="40" autocomplete="off" placeholder="mis. L7">
+              <p class="hint" id="ns-code-hint"></p>
+            </div>
+          </div>
+          <div class="actions">
+            <button type="button" class="btn ghost" id="ns-cancel">Batal</button>
+            <button type="submit" class="btn primary" id="ns-submit">Buat sheet</button>
+          </div>
+        </form>
+        <div id="ns-done" class="hidden"></div>
+      </div>
+    </section>
   </main>
 
   <div class="actionbar hidden" id="actionbar">
@@ -304,7 +352,8 @@
     text: '',        // teks yang dipratinjau = teks yang akan diimpor
     other: '',
     sel: {},         // id -> dicentang?
-    disc: {}         // id -> Discipline pilihan
+    disc: {},        // id -> Discipline pilihan
+    newSheetFrom: '' // 'menu' (dialog sendiri) atau 'paste' (dari tautan "+ Sheet baru")
   };
 
   // Pertanyaan untuk mentor per kolom kuning (Root Cause & Solution selalu ditanyakan).
@@ -350,8 +399,9 @@
 
   function show(view) {
     var order = ['paste', 'preview', 'result'];
-    order.forEach(function (v) { $('view-' + v).classList.toggle('hidden', v !== view); });
+    order.concat('newsheet').forEach(function (v) { $('view-' + v).classList.toggle('hidden', v !== view); });
     $('actionbar').classList.toggle('hidden', view !== 'preview');
+    $('steps').classList.toggle('hidden', view === 'newsheet');
     var idx = order.indexOf(view);
     Array.prototype.forEach.call(document.querySelectorAll('#steps li'), function (li) {
       var i = order.indexOf(li.getAttribute('data-step'));
@@ -362,23 +412,30 @@
 
   // ---------- 1. Paste ----------
   function boot() {
-    call('getInitData').then(function (d) {
+    if (APP_MODE === 'newsheet') openNewSheet('menu');
+    loadInit().catch(function (e) { flash('Gagal memuat: ' + cleanErr(e)); });
+  }
+
+  /** Muat daftar sheet & rute proyek; `prefer` = sheet yang dipilih di "Sheet untuk proyek lain". */
+  function loadInit(prefer) {
+    return call('getInitData').then(function (d) {
       state.init = d;
       $('ss-name').textContent = d.spreadsheetName;
+      var pick = prefer && d.sheets.indexOf(prefer) !== -1 ? prefer : d.defaultOther;
       $('other').innerHTML = d.sheets.map(function (n) {
-        return '<option value="' + esc(n) + '"' + (n === d.defaultOther ? ' selected' : '') + '>' + esc(n) + '</option>';
+        return '<option value="' + esc(n) + '"' + (n === pick ? ' selected' : '') + '>' + esc(n) + '</option>';
       }).join('');
       $('other').disabled = !d.sheets.length;
       $('routes').innerHTML = d.projectSheets.map(function (p) {
         return '<span class="route' + (p.ok ? '' : ' bad') + '"><b>' + esc(p.project) + '</b> → ' + esc(p.sheet) +
           (p.ok ? '' : ' (sheet tidak ditemukan)') + '</span>';
       }).join('') || '<span class="muted small">Belum ada (PROJECT_SHEET kosong).</span>';
-      if (!d.sheets.length) {
-        flash('Tidak ada sheet dengan header di baris ' + d.headerRow + ' (No.序号 | Machine | Issue Description). Tool tidak akan menulis apa pun.');
-        return;
+      $('btn-preview').disabled = !d.sheets.length;
+      if (!d.sheets.length && APP_MODE !== 'newsheet') {
+        flash('Belum ada sheet issue (header baris ' + d.headerRow + ': No.序号 | Machine | Issue Description). ' +
+          'Klik “+ Sheet baru” untuk membuat sheet dengan format manajer.', 'warn');
       }
-      $('btn-preview').disabled = false;
-    }).catch(function (e) { flash('Gagal memuat: ' + cleanErr(e)); });
+    });
   }
 
   function doPreview() {
@@ -623,7 +680,77 @@
     else fallback();
   }
 
+  // ---------- Buat sheet baru ----------
+  function codeHint() {
+    var code = $('ns-code').value.trim();
+    $('ns-code-hint').textContent = code
+      ? 'Laporan dengan “②Nama proyek: ' + code + '” otomatis masuk ke sheet ini (huruf besar/kecil, spasi, strip diabaikan).'
+      : 'Kosong = sheet ini dipilih manual di “Sheet untuk proyek lain” saat impor.';
+  }
+
+  function openNewSheet(from) {
+    state.newSheetFrom = from;
+    $('ns-form').reset();
+    $('ns-form').classList.remove('hidden');
+    $('ns-done').classList.add('hidden');
+    codeHint();
+    flash('');
+    show('newsheet');
+    $('ns-name').focus();
+  }
+
+  function closeNewSheet() {
+    if (state.newSheetFrom === 'menu') google.script.host.close();
+    else show('paste');
+  }
+
+  function doCreateSheet(e) {
+    e.preventDefault();
+    var btn = $('ns-submit');
+    if (btn.disabled) return;
+    var opts = { sheetName: $('ns-name').value.trim(), projectName: $('ns-project').value.trim(), projectCode: $('ns-code').value.trim() };
+    if (!opts.sheetName) { flash('Nama sheet wajib diisi.', 'warn'); $('ns-name').focus(); return; }
+    flash('');
+    busy(btn, true, 'Membuat sheet…');
+    call('createIssueSheet', opts).then(function (res) {
+      renderSheetDone(res);
+      return loadInit(res.code ? null : res.sheet);
+    }).catch(function (err) { flash(cleanErr(err)); })
+      .then(function () { busy(btn, false); });
+  }
+
+  function renderSheetDone(res) {
+    var items = [
+      'Format sheet manajer: header bilingual di baris 8, Status Overview, dropdown Discipline, nomor 1–14 (baris data ' + esc(res.dataRows) + ').',
+      res.code
+        ? 'Laporan dengan <b>②Nama proyek: ' + esc(res.code) + '</b> otomatis masuk ke sheet ini.'
+        : 'Tanpa kode proyek: pilih sheet ini di “Sheet untuk proyek lain” saat impor.',
+      'Teks besar di B4: <b>' + esc(res.projectName) + '</b>.'
+    ];
+    if (res.createdRevision) items.push('Sheet <b>Revision_History</b> ikut dibuat (judul di B6 membaca nomor revisi dari sana).');
+    var buttons = state.newSheetFrom === 'menu'
+      ? '<button type="button" class="btn primary" id="ns-close">Tutup</button>'
+      : '<button type="button" class="btn ghost" id="ns-another">Buat lagi</button>' +
+        '<button type="button" class="btn primary" id="ns-back">Kembali ke impor</button>';
+    $('ns-done').innerHTML =
+      '<div class="done-head"><div class="hero-icon">✓</div><h2>Sheet “' + esc(res.sheet) + '” dibuat</h2></div>' +
+      '<ul class="done-list">' + items.map(function (t) { return '<li>' + t + '</li>'; }).join('') + '</ul>' +
+      '<div class="actions">' + buttons + '</div>';
+    $('ns-form').classList.add('hidden');
+    $('ns-done').classList.remove('hidden');
+  }
+
   // ---------- event ----------
+  $('btn-new-sheet').addEventListener('click', function () { openNewSheet('paste'); });
+  $('ns-form').addEventListener('submit', doCreateSheet);
+  $('ns-cancel').addEventListener('click', closeNewSheet);
+  $('ns-code').addEventListener('input', codeHint);
+  $('ns-done').addEventListener('click', function (e) {
+    var id = e.target.id;
+    if (id === 'ns-close') google.script.host.close();
+    else if (id === 'ns-back') show('paste');
+    else if (id === 'ns-another') openNewSheet(state.newSheetFrom);
+  });
   $('btn-preview').addEventListener('click', doPreview);
   $('btn-clear').addEventListener('click', function () { $('src').value = ''; flash(''); $('src').focus(); });
   $('src').addEventListener('keydown', function (e) {

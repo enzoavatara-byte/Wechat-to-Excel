@@ -25,6 +25,32 @@ function issueSheetNames_(ss) {
   return ss.getSheets().filter(isIssueSheet_).map(function (sh) { return sh.getName(); });
 }
 
+// ---------- Rute proyek ----------
+
+// Kode proyek untuk sheet yang dibuat lewat menu "Buat sheet baru" disimpan sebagai developer
+// metadata di sheet itu sendiri: ikut walau sheet di-rename, hilang kalau sheet dihapus.
+var ROUTE_META_KEY = 'wechatImport.projectCode';
+
+/**
+ * Kode proyek (huruf besar, tanpa spasi/strip) -> nama sheet. PROJECT_SHEET di Config menang,
+ * kecuali sheet-nya tidak ada dan kode itu sudah punya sheet dari menu "Buat sheet baru"
+ * (mis. spreadsheet baru yang tidak punya "Geely list (2)").
+ */
+function projectRoutes_(ss) {
+  var out = {};
+  ss.getSheets().forEach(function (sh) {
+    sh.getDeveloperMetadata().forEach(function (m) {
+      var code = projectKey_(m.getValue());
+      if (m.getKey() === ROUTE_META_KEY && code && !out.hasOwnProperty(code)) out[code] = sh.getName();
+    });
+  });
+  Object.keys(PROJECT_SHEET).forEach(function (k) {
+    var code = projectKey_(k);
+    if (ss.getSheetByName(PROJECT_SHEET[k]) || !out.hasOwnProperty(code)) out[code] = PROJECT_SHEET[k];
+  });
+  return out;
+}
+
 /** Sheet tujuan yang sudah dicek, atau error yang jelas (tidak pernah menulis ke sheet yang salah). */
 function issueSheet_(ss, name) {
   var sh = ss.getSheetByName(name);
@@ -160,9 +186,10 @@ function previewWeChat(text, otherSheet) {
   var ss = ss_();
   var other = issueSheet_(ss, otherSheet).getName();
   var recs = parseReports(text);
+  var routes = projectRoutes_(ss);
   var info = {};
   recs.forEach(function (r) {
-    var name = targetSheetName_(r, other);
+    var name = targetSheetName_(r, other, routes);
     if (!info[name]) info[name] = sheetInfo_(ss, name);
     r.sheet = name;
     r.sheetError = info[name].error;
@@ -229,6 +256,7 @@ function importWeChat(text, otherSheet, picks) {
   try {
     var ss = ss_();
     var other = issueSheet_(ss, otherSheet).getName();
+    var routes = projectRoutes_(ss);
     var chosen = {};
     (picks || []).forEach(function (p) { chosen[p.id] = p; });
     var nextFrom = {};
@@ -243,7 +271,7 @@ function importWeChat(text, otherSheet, picks) {
         errors.push(label + ': Machine & Deskripsi kosong, tidak ditulis.');
         return;
       }
-      var name = targetSheetName_(rec, other);
+      var name = targetSheetName_(rec, other, routes);
       var sh;
       try {
         sh = issueSheet_(ss, name);

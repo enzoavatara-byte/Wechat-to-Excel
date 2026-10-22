@@ -6,6 +6,7 @@ function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu('WeChat Import')
     .addItem('Import laporan WeChat…', 'showImportDialog')
+    .addItem('Buat sheet baru (format manajer)…', 'showNewSheetDialog')
     .addSeparator()
     .addItem('Cek setup', 'setup')
     .addToUi();
@@ -34,12 +35,13 @@ function setup() {
 
   var sheets = issueSheetNames_(ss);
   if (sheets.length) ok('Sheet issue (header baris ' + ROW.HEADER + '): ' + sheets.join(', '));
-  else bad('Tidak ada sheet dengan header ' + HEADER_CHECK.join(' | ') + ' di baris ' + ROW.HEADER + '. Tool tidak akan menulis apa pun.');
+  else bad('Tidak ada sheet dengan header ' + HEADER_CHECK.join(' | ') + ' di baris ' + ROW.HEADER + '. Buat lewat menu WeChat Import → Buat sheet baru.');
 
-  Object.keys(PROJECT_SHEET).forEach(function (p) {
-    var name = PROJECT_SHEET[p];
+  var routes = projectRoutes_(ss);
+  Object.keys(routes).forEach(function (p) {
+    var name = routes[p];
     if (sheets.indexOf(name) !== -1) ok('Proyek ' + p + ' → "' + name + '"');
-    else bad('Proyek ' + p + ' → "' + name + '" tidak ditemukan / bukan sheet issue. Ubah PROJECT_SHEET di Config.');
+    else bad('Proyek ' + p + ' → "' + name + '" tidak ditemukan / bukan sheet issue. Buat lewat menu "Buat sheet baru" dengan kode ' + p + ', atau ubah PROJECT_SHEET di Config.');
   });
 
   sheets.forEach(function (name) {
@@ -66,6 +68,10 @@ function showImportDialog() {
   SpreadsheetApp.getUi().showModalDialog(page_('dialog').setWidth(1100).setHeight(760), APP_NAME);
 }
 
+function showNewSheetDialog() {
+  SpreadsheetApp.getUi().showModalDialog(page_('newsheet').setWidth(560).setHeight(600), 'Buat sheet baru');
+}
+
 function doGet() {
   return page_('webapp')
     .setTitle(APP_NAME)
@@ -85,13 +91,14 @@ function include(name) {
 
 /**
  * Data awal UI. Sheet default untuk proyek lain = sheet aktif kalau itu sheet issue
- * (dari menu), selain itu sheet issue pertama yang bukan tujuan PROJECT_SHEET (web app
+ * (dari menu), selain itu sheet issue pertama yang bukan tujuan rute proyek (web app
  * tidak punya "sheet aktif").
  */
 function getInitData() {
   var ss = ss_();
   var sheets = issueSheetNames_(ss);
-  var reserved = Object.keys(PROJECT_SHEET).map(function (k) { return PROJECT_SHEET[k]; });
+  var routes = projectRoutes_(ss);
+  var reserved = Object.keys(routes).map(function (k) { return routes[k]; });
   var free = sheets.filter(function (n) { return reserved.indexOf(n) === -1; });
   var active = ss.getActiveSheet().getName();
   return {
@@ -100,8 +107,8 @@ function getInitData() {
     url: ss.getUrl(),
     sheets: sheets,
     defaultOther: free.indexOf(active) !== -1 ? active : (free[0] || sheets[0] || ''),
-    projectSheets: Object.keys(PROJECT_SHEET).map(function (k) {
-      return { project: k, sheet: PROJECT_SHEET[k], ok: sheets.indexOf(PROJECT_SHEET[k]) !== -1 };
+    projectSheets: Object.keys(routes).map(function (k) {
+      return { project: k, sheet: routes[k], ok: sheets.indexOf(routes[k]) !== -1 };
     }),
     disciplines: DISCIPLINES,
     headerRow: ROW.HEADER

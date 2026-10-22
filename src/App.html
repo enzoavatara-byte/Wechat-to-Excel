@@ -8,7 +8,8 @@
     text: '',        // teks yang dipratinjau = teks yang akan diimpor
     other: '',
     sel: {},         // id -> dicentang?
-    disc: {}         // id -> Discipline pilihan
+    disc: {},        // id -> Discipline pilihan
+    newSheetFrom: '' // 'menu' (dialog sendiri) atau 'paste' (dari tautan "+ Sheet baru")
   };
 
   // Pertanyaan untuk mentor per kolom kuning (Root Cause & Solution selalu ditanyakan).
@@ -54,8 +55,9 @@
 
   function show(view) {
     var order = ['paste', 'preview', 'result'];
-    order.forEach(function (v) { $('view-' + v).classList.toggle('hidden', v !== view); });
+    order.concat('newsheet').forEach(function (v) { $('view-' + v).classList.toggle('hidden', v !== view); });
     $('actionbar').classList.toggle('hidden', view !== 'preview');
+    $('steps').classList.toggle('hidden', view === 'newsheet');
     var idx = order.indexOf(view);
     Array.prototype.forEach.call(document.querySelectorAll('#steps li'), function (li) {
       var i = order.indexOf(li.getAttribute('data-step'));
@@ -66,23 +68,30 @@
 
   // ---------- 1. Paste ----------
   function boot() {
-    call('getInitData').then(function (d) {
+    if (APP_MODE === 'newsheet') openNewSheet('menu');
+    loadInit().catch(function (e) { flash('Gagal memuat: ' + cleanErr(e)); });
+  }
+
+  /** Muat daftar sheet & rute proyek; `prefer` = sheet yang dipilih di "Sheet untuk proyek lain". */
+  function loadInit(prefer) {
+    return call('getInitData').then(function (d) {
       state.init = d;
       $('ss-name').textContent = d.spreadsheetName;
+      var pick = prefer && d.sheets.indexOf(prefer) !== -1 ? prefer : d.defaultOther;
       $('other').innerHTML = d.sheets.map(function (n) {
-        return '<option value="' + esc(n) + '"' + (n === d.defaultOther ? ' selected' : '') + '>' + esc(n) + '</option>';
+        return '<option value="' + esc(n) + '"' + (n === pick ? ' selected' : '') + '>' + esc(n) + '</option>';
       }).join('');
       $('other').disabled = !d.sheets.length;
       $('routes').innerHTML = d.projectSheets.map(function (p) {
         return '<span class="route' + (p.ok ? '' : ' bad') + '"><b>' + esc(p.project) + '</b> → ' + esc(p.sheet) +
           (p.ok ? '' : ' (sheet tidak ditemukan)') + '</span>';
       }).join('') || '<span class="muted small">Belum ada (PROJECT_SHEET kosong).</span>';
-      if (!d.sheets.length) {
-        flash('Tidak ada sheet dengan header di baris ' + d.headerRow + ' (No.序号 | Machine | Issue Description). Tool tidak akan menulis apa pun.');
-        return;
+      $('btn-preview').disabled = !d.sheets.length;
+      if (!d.sheets.length && APP_MODE !== 'newsheet') {
+        flash('Belum ada sheet issue (header baris ' + d.headerRow + ': No.序号 | Machine | Issue Description). ' +
+          'Klik “+ Sheet baru” untuk membuat sheet dengan format manajer.', 'warn');
       }
-      $('btn-preview').disabled = false;
-    }).catch(function (e) { flash('Gagal memuat: ' + cleanErr(e)); });
+    });
   }
 
   function doPreview() {
@@ -327,7 +336,77 @@
     else fallback();
   }
 
+  // ---------- Buat sheet baru ----------
+  function codeHint() {
+    var code = $('ns-code').value.trim();
+    $('ns-code-hint').textContent = code
+      ? 'Laporan dengan “②Nama proyek: ' + code + '” otomatis masuk ke sheet ini (huruf besar/kecil, spasi, strip diabaikan).'
+      : 'Kosong = sheet ini dipilih manual di “Sheet untuk proyek lain” saat impor.';
+  }
+
+  function openNewSheet(from) {
+    state.newSheetFrom = from;
+    $('ns-form').reset();
+    $('ns-form').classList.remove('hidden');
+    $('ns-done').classList.add('hidden');
+    codeHint();
+    flash('');
+    show('newsheet');
+    $('ns-name').focus();
+  }
+
+  function closeNewSheet() {
+    if (state.newSheetFrom === 'menu') google.script.host.close();
+    else show('paste');
+  }
+
+  function doCreateSheet(e) {
+    e.preventDefault();
+    var btn = $('ns-submit');
+    if (btn.disabled) return;
+    var opts = { sheetName: $('ns-name').value.trim(), projectName: $('ns-project').value.trim(), projectCode: $('ns-code').value.trim() };
+    if (!opts.sheetName) { flash('Nama sheet wajib diisi.', 'warn'); $('ns-name').focus(); return; }
+    flash('');
+    busy(btn, true, 'Membuat sheet…');
+    call('createIssueSheet', opts).then(function (res) {
+      renderSheetDone(res);
+      return loadInit(res.code ? null : res.sheet);
+    }).catch(function (err) { flash(cleanErr(err)); })
+      .then(function () { busy(btn, false); });
+  }
+
+  function renderSheetDone(res) {
+    var items = [
+      'Format sheet manajer: header bilingual di baris 8, Status Overview, dropdown Discipline, nomor 1–14 (baris data ' + esc(res.dataRows) + ').',
+      res.code
+        ? 'Laporan dengan <b>②Nama proyek: ' + esc(res.code) + '</b> otomatis masuk ke sheet ini.'
+        : 'Tanpa kode proyek: pilih sheet ini di “Sheet untuk proyek lain” saat impor.',
+      'Teks besar di B4: <b>' + esc(res.projectName) + '</b>.'
+    ];
+    if (res.createdRevision) items.push('Sheet <b>Revision_History</b> ikut dibuat (judul di B6 membaca nomor revisi dari sana).');
+    var buttons = state.newSheetFrom === 'menu'
+      ? '<button type="button" class="btn primary" id="ns-close">Tutup</button>'
+      : '<button type="button" class="btn ghost" id="ns-another">Buat lagi</button>' +
+        '<button type="button" class="btn primary" id="ns-back">Kembali ke impor</button>';
+    $('ns-done').innerHTML =
+      '<div class="done-head"><div class="hero-icon">✓</div><h2>Sheet “' + esc(res.sheet) + '” dibuat</h2></div>' +
+      '<ul class="done-list">' + items.map(function (t) { return '<li>' + t + '</li>'; }).join('') + '</ul>' +
+      '<div class="actions">' + buttons + '</div>';
+    $('ns-form').classList.add('hidden');
+    $('ns-done').classList.remove('hidden');
+  }
+
   // ---------- event ----------
+  $('btn-new-sheet').addEventListener('click', function () { openNewSheet('paste'); });
+  $('ns-form').addEventListener('submit', doCreateSheet);
+  $('ns-cancel').addEventListener('click', closeNewSheet);
+  $('ns-code').addEventListener('input', codeHint);
+  $('ns-done').addEventListener('click', function (e) {
+    var id = e.target.id;
+    if (id === 'ns-close') google.script.host.close();
+    else if (id === 'ns-back') show('paste');
+    else if (id === 'ns-another') openNewSheet(state.newSheetFrom);
+  });
   $('btn-preview').addEventListener('click', doPreview);
   $('btn-clear').addEventListener('click', function () { $('src').value = ''; flash(''); $('src').focus(); });
   $('src').addEventListener('keydown', function (e) {
