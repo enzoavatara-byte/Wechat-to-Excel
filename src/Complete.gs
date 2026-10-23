@@ -39,6 +39,7 @@ function completeRow_(name, sheetId, row, cur, notes) {
     descOrig: originalFromNote_(note('DESC')) || '',
     rootCause: get('ROOT_CAUSE'),
     solution: get('SOLUTION'),
+    pic: get('PIC'),
     discipline: get('DISCIPLINE'),
     end: get('END_TIME'),
     date: normDate_(get('DATE')),

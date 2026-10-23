@@ -27,6 +27,7 @@ PASTE teks WeChat → PERIKSA (centang, pilih Discipline, cek terjemahan) → IM
 | `src/Parser.gs` | Fungsi murni (tanpa `SpreadsheetApp`): `parseReports`, `parseOne`, `parseDateTime`, pemetaan ke kolom |
 | `src/Sheet.gs` | `findNextRow`, `writeRecord`, `previewWeChat`, `importWeChat`, pengaman sheet, deteksi duplikat |
 | `src/Complete.gs` | Tab **Lengkapi**: isi Root Cause/Solution/Discipline dari web app, langsung diterjemahkan |
+| `src/Edit.gs` | **✎ Edit isi sel** di layar Periksa: validasi G/J, terjemahan teks yang diketik, tombol ↻ |
 | `src/Template.gs` | Menu **Buat sheet baru**: format sheet manajer + `createIssueSheet` |
 | `src/Ui.gs` | `setup` (izin + cek konfigurasi), `onOpen` (menu), `showImportDialog`, `showNewSheetDialog`, `doGet` (web app), `getInitData` |
 | `src/Index.html`, `App.html`, `Styles.html` | UI: satu halaman, 3 langkah. Dipakai di dialog menu **dan** web app |
@@ -87,9 +88,18 @@ PASTE teks WeChat → PERIKSA (centang, pilih Discipline, cek terjemahan) → IM
    - Machine, Deskripsi, dan Notes tampil persis seperti yang akan ditulis (中文 lalu (English)), plus teks aslinya.
      Baca baris English-nya: kalau artinya melenceng, terjemahan Mandarinnya juga melenceng.
    - Peringatan menunjukkan field yang gagal terbaca + kolom yang terdampak.
+   - **✎ Edit isi sel**: semua sel C–K laporan itu bisa diubah sebelum ditulis.
+     - C, D, E, F, K: teks berhuruf Mandarin ditulis apa adanya (mis. terjemahan yang Anda perbaiki). Teks tanpa huruf
+       Mandarin dianggap Bahasa Indonesia dan diterjemahkan saat impor; klik **↻ Terjemahkan** untuk melihat hasilnya
+       sebelum impor. Untuk C, ketik `Proyek - Proses` (mis. `E245 - Press Modul`) supaya hasilnya `E245模组压装` / `(E245 Module Press)`.
+     - E/F boleh langsung diisi kalau jawabannya sudah ada (diterjemahkan, teks asli ke catatan sel).
+     - G (jam, `20:30`), I (PIC), J (tanggal, `2026/10/20`). Format jam/tanggal dicek; selama ada yang tidak valid,
+       tombol Impor terkunci. H tetap lewat dropdown.
+     - Catatan sel C/D tetap teks asli laporan (dipakai juga untuk deteksi duplikat). *Batalkan perubahan* mengembalikan hasil parser.
 5. **Impor N laporan.**
-6. Halaman **Selesai**: link langsung ke tiap baris, dan **Pertanyaan untuk mentor** (tombol *Salin*)
-   berisi Root Cause, Solusi, dan semua kolom kosong lain per laporan, siap dikirim.
+6. Halaman **Selesai**: link langsung ke tiap baris, dan **Pertanyaan untuk mentor** (tombol *Salin*): per laporan
+   yang masih ada kolom kosong, berisi pertanyaannya (Root cause? Solusi? …) plus detail yang bisa dipilih:
+   **waktu & durasi**, **PIC**, **jenis & status**, **sheet & baris**. Teksnya bisa diedit langsung sebelum disalin.
 7. Setelah dapat jawaban mentor: tab **Lengkapi** di web app (bagian 3c). Ketik dalam Bahasa Indonesia →
    **Simpan & terjemahkan**. Tidak perlu membuka sheet atau memakai menu.
    Alternatif kalau mengetik langsung di sheet: pilih sel-selnya lalu
@@ -294,6 +304,8 @@ npm run build   # buat ulang dist/ setelah mengubah src/
 - `test/complete.test.js`: tab *Lengkapi* (daftar & urutan termasuk tanggal angka lama, simpan + terjemah E/F
   sekaligus, isi bertahap, teks Mandarin apa adanya, tidak menimpa isi Mandarin, baris berubah, terjemahan gagal,
   Discipline di luar dropdown).
+- `test/edit.test.js`: *✎ Edit isi sel* (teks Mandarin apa adanya, teks Indonesia diterjemahkan termasuk format C,
+  E/F saat impor, validasi G/J, C & D kosong ditolak, terjemahan gagal → tidak menulis, tombol ↻).
 - `test/template.test.js`: menu *Buat sheet baru* (isi & struktur sama dengan file manajer, Revision_History,
   rute kode proyek termasuk rename/hapus sheet, nama/kode dobel ditolak, spreadsheet kosong).
 - `test/dist.test.js`: `dist/` harus sama dengan hasil build dari `src/` (gagal kalau lupa `npm run build`),

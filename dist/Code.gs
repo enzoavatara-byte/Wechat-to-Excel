@@ -11,7 +11,7 @@
  */
 var APP_NAME = 'WeChat Import';
 // Diisi otomatis oleh `npm run build` (dist/). Tampil di UI & setup untuk memastikan kode terbaru yang jalan.
-var APP_VERSION = '588b4c3';
+var APP_VERSION = '0c14b5d';
 
 // Struktur sheet manajer: header di baris 8, data mulai baris 9.
 var ROW = {
@@ -888,17 +888,28 @@ function asText_(v) {
  * - Catatan sel C, D, K diisi teks asli + peringatan (kalau diterjemahkan), selain itu dikosongkan.
  * - G dan J ditulis sebagai nomor seri + format sel, bukan objek Date,
  *   jadi hasilnya tidak bergeser walau timezone script ≠ timezone spreadsheet.
+ * - `override` (dari "✎ Edit" di layar Periksa, lihat Edit.gs) menggantikan nilai/catatan hasil parser;
+ *   E/F hanya ditulis kalau ada di override.
+ * Mengembalikan nilai akhir yang ditulis (sebelum awalan ').
  */
-function writeRecord(sh, row, rec) {
+function writeRecord(sh, row, rec, override) {
   var out = buildRow_(rec);
-  ['MACHINE', 'DESC', 'PIC'].forEach(function (k) { out.values[k] = asText_(out.values[k]); });
+  if (override) {
+    Object.keys(override.values).forEach(function (k) { out.values[k] = override.values[k]; });
+    Object.keys(override.notes).forEach(function (k) { out.notes[k] = override.notes[k]; });
+  }
+  var finalValues = {};
+  Object.keys(out.values).forEach(function (k) { finalValues[k] = out.values[k]; });
+  ['MACHINE', 'DESC', 'ROOT_CAUSE', 'SOLUTION', 'PIC', 'NOTES'].forEach(function (k) {
+    if (out.values.hasOwnProperty(k)) out.values[k] = asText_(out.values[k]);
+  });
   var noCell = sh.getRange(row, COL.NO);
   var no = noCell.getValue();
   if (isEmpty_(no)) {
     no = nextNumber_(sh, row);
     noCell.setValue(no);
   }
-  // Satu panggilan setValues per kelompok kolom yang bersebelahan (C:D dan G:K).
+  // Satu panggilan setValues per kelompok kolom yang bersebelahan (C:D dan G:K, atau C:K kalau E/F diisi).
   var cols = Object.keys(out.values).map(function (k) { return { col: COL[k], value: out.values[k] }; })
     .sort(function (a, b) { return a.col - b.col; });
   var run = [];
@@ -915,7 +926,7 @@ function writeRecord(sh, row, rec) {
   for (var c = COL.MACHINE; c <= COL.NOTES; c++) notes.push('');
   Object.keys(out.notes).forEach(function (k) { notes[COL[k] - COL.MACHINE] = out.notes[k]; });
   sh.getRange(row, COL.MACHINE, 1, notes.length).setNotes([notes]).setBackground(null);
-  return { row: row, no: no };
+  return { row: row, no: no, values: finalValues };
 }
 
 /**
@@ -1011,6 +1022,26 @@ function sheetInfo_(ss, name) {
   return { error: '', nextRow: findNextRow(sh), keys: existingKeys_(sh) };
 }
 
+/** Ringkasan baris yang sudah ditulis (dengan isian yang diedit) untuk halaman Selesai & teks mentor. */
+function writtenView_(rec, it, v) {
+  var view = toView_(rec);
+  var cells = it.cells;
+  var typed = function (k) {
+    var s = cleanLines_(String(cells[k] || '')).join('\n');
+    return cells.hasOwnProperty(k) && s && !hasChinese_(s) ? s : '';
+  };
+  view.cells = { C: v.MACHINE, D: v.DESC, K: v.NOTES };
+  view.pic = v.PIC;
+  view.machine = typed('MACHINE') || view.machine;
+  view.description = typed('DESC') || view.description;
+  if (cells.hasOwnProperty('END_TIME')) view.end = v.END_TIME === '' ? '' : fmtTime_(parseEditTime_(cells.END_TIME));
+  if (cells.hasOwnProperty('DATE')) view.date = v.DATE === '' ? '' : fmtDate_(parseEditDate_(cells.DATE));
+  view.empty = ['ROOT_CAUSE', 'SOLUTION', 'MACHINE', 'DESC', 'END_TIME', 'DISCIPLINE', 'PIC', 'DATE']
+    .filter(function (k) { return v[k] === '' || v[k] === undefined || v[k] === null; })
+    .map(function (k) { return { key: k, col: colLetter_(COL[k]) }; });
+  return view;
+}
+
 /** Record -> objek polos untuk UI (label sudah diformat, `cells` = isi sel yang akan ditulis). */
 function toView_(r) {
   var row = buildRow_(r);
@@ -1064,17 +1095,26 @@ function importWeChat(text, otherSheet, picks, opts) {
     var errors = [];
     var recs = parseReports(text).filter(function (rec) { return chosen.hasOwnProperty(rec.id); });
     recs.forEach(function (rec) { applyDisciplineChoice_(rec, chosen[rec.id].discipline); });
-    if (wantTranslate_(opts)) {
-      try {
-        translateRecords_(recs.filter(function (r) { return r.writable; }));
-      } catch (e) {
-        throw new Error('Terjemahan gagal, tidak ada yang ditulis: ' + (e.message || e) + '. Coba lagi, atau lanjut tanpa terjemahan.');
-      }
+    // Terjemahan hasil parser + isian yang diedit, semuanya SEBELUM menulis.
+    var items = recs.filter(function (r) { return r.writable; })
+      .map(function (r) { return { rec: r, cells: chosen[r.id].cells || {} }; });
+    var edited = {};
+    try {
+      if (wantTranslate_(opts)) translateRecords_(items.map(function (it) { return it.rec; }));
+      prepareEdits_(items, wantTranslate_(opts));
+    } catch (e) {
+      throw new Error('Terjemahan gagal, tidak ada yang ditulis: ' + (e.message || e) + '. Coba lagi, atau lanjut tanpa terjemahan.');
     }
+    items.forEach(function (it) { edited[it.rec.id] = it; });
     recs.forEach(function (rec) {
       var label = (fmtTime_(rec.start.time) || '??:??') + ' ' + (rec.machine || rec.description);
       if (!rec.writable) {
         errors.push(label + ': Machine & Deskripsi kosong, tidak ditulis.');
+        return;
+      }
+      var it = edited[rec.id];
+      if (it.error) {
+        errors.push(label + ': ' + it.error + '. Tidak ditulis.');
         return;
       }
       var name = targetSheetName_(rec, other, routes);
@@ -1086,9 +1126,9 @@ function importWeChat(text, otherSheet, picks, opts) {
         return;
       }
       var row = findNextRow(sh, nextFrom[name]);
-      var res = writeRecord(sh, row, rec);
+      var res = writeRecord(sh, row, rec, it.override);
       nextFrom[name] = row + 1;
-      var view = toView_(rec);
+      var view = writtenView_(rec, it, res.values);
       view.sheet = name;
       view.sheetId = sh.getSheetId();
       view.row = row;
@@ -1100,6 +1140,99 @@ function importWeChat(text, otherSheet, picks, opts) {
   } finally {
     lock.releaseLock();
   }
+}
+
+// ======================= Edit.gs =======================
+
+/**
+ * Isi sel yang diubah manual di layar Periksa sebelum impor (tombol "✎ Edit" per laporan).
+ *
+ * Aturan teks C/D/E/F/K: kalau berisi huruf Mandarin -> ditulis apa adanya (mis. terjemahan yang
+ * diperbaiki manual); kalau tidak -> dianggap Bahasa Indonesia dan diterjemahkan ke "中文\n(English)"
+ * (kalau TRANSLATE). G (jam) dan J (tanggal) divalidasi; I (PIC) apa adanya. H tetap lewat dropdown.
+ * Catatan sel C/D tetap berisi teks asli laporan (dipakai juga untuk deteksi duplikat).
+ */
+var EDIT_TEXT_KEYS = ['MACHINE', 'DESC', 'ROOT_CAUSE', 'SOLUTION', 'NOTES'];
+var EDIT_KEYS = EDIT_TEXT_KEYS.concat(['END_TIME', 'PIC', 'DATE']);
+
+/** "20:30" / "20.30" -> {h, mi}; selain itu null. */
+function parseEditTime_(s) {
+  var m = /^(\d{1,2})\s*[:.]\s*(\d{2})$/.exec(String(s).trim());
+  return m && +m[1] <= 23 && +m[2] <= 59 ? { h: +m[1], mi: +m[2] } : null;
+}
+
+/** "2026/10/21" (atau . -) -> {y, m, d}; selain itu null. */
+function parseEditDate_(s) {
+  var m = /^(\d{4})\s*[.\-\/]\s*(\d{1,2})\s*[.\-\/]\s*(\d{1,2})$/.exec(String(s).trim());
+  return m && isValidDate_(+m[1], +m[2], +m[3]) ? { y: +m[1], m: +m[2], d: +m[3] } : null;
+}
+
+/** "E245 - Finishing" -> { project: 'E245', process: 'Finishing' }, atau null. */
+function splitMachine_(s) {
+  var m = /^(.+?)\s+-\s+(.+)$/.exec(String(s).trim());
+  return m ? { project: m[1].trim(), process: m[2].trim() } : null;
+}
+
+/**
+ * items = [{ rec, cells: { KEY: teks } }]. Mengisi item.override = { values, notes } dan item.error.
+ * Semua teks yang perlu diterjemahkan dikirim sekaligus; kalau penerjemah gagal, error dilempar
+ * sebelum ada yang ditulis.
+ */
+function prepareEdits_(items, translate) {
+  var jobs = [];
+  items.forEach(function (it) {
+    it.override = { values: {}, notes: {} };
+    it.error = '';
+    var cells = it.cells || {};
+    var problems = [];
+    Object.keys(cells).forEach(function (key) {
+      if (EDIT_KEYS.indexOf(key) === -1) return;
+      var raw = String(cells[key] == null ? '' : cells[key]);
+      var col = colLetter_(COL[key]);
+      if (key === 'END_TIME' || key === 'DATE') {
+        if (!raw.trim()) { it.override.values[key] = ''; return; }
+        var t = key === 'END_TIME' ? parseEditTime_(raw) : parseEditDate_(raw);
+        if (!t) { problems.push(col + ' "' + raw.trim() + '" tidak valid (pakai ' + (key === 'END_TIME' ? 'jam:menit, mis. 20:30' : 'tahun/bulan/tanggal, mis. 2026/10/21') + ')'); return; }
+        it.override.values[key] = key === 'END_TIME' ? timeSerial_(t) : dateSerial_(t);
+        return;
+      }
+      var text = key === 'PIC' ? raw.replace(/\s+/g, ' ').trim() : cleanLines_(raw).join('\n');
+      if (key === 'PIC' || !text || !translate || hasChinese_(text)) {
+        it.override.values[key] = text;
+        return;
+      }
+      var split = key === 'MACHINE' ? splitMachine_(text) : null;
+      jobs.push({ it: it, key: key, text: text, project: split ? split.project : '', src: split ? split.process : text });
+    });
+    if (problems.length) it.error = problems.join('; ');
+  });
+  if (jobs.length) {
+    var en = translateTexts_(jobs.map(function (j) { return j.src; }), 'id', 'en');
+    var zh = translateTexts_(en, 'en', 'zh-CN').map(fixZh_);
+    jobs.forEach(function (j, k) {
+      var p = j.project;
+      j.it.override.values[j.key] = p
+        ? bi_(p + (/^[A-Za-z0-9]/.test(zh[k]) ? ' ' : '') + zh[k], p + ' ' + en[k])
+        : bi_(zh[k], en[k]);
+      if (j.key === 'ROOT_CAUSE' || j.key === 'SOLUTION') j.it.override.notes[j.key] = NOTE_PREFIX + j.text;
+    });
+  }
+  items.forEach(function (it) {
+    var v = it.override.values;
+    var c = v.hasOwnProperty('MACHINE') ? v.MACHINE : it.rec.machine;
+    var d = v.hasOwnProperty('DESC') ? v.DESC : it.rec.description;
+    if (!it.error && !c && !d) it.error = 'Machine (C) dan Deskripsi (D) tidak boleh kosong dua-duanya';
+  });
+  return items;
+}
+
+/** Tombol "↻ Terjemahkan" di layar Periksa: pratinjau hasil satu sel tanpa menulis apa pun. */
+function translateCell(key, text) {
+  if (EDIT_TEXT_KEYS.indexOf(key) === -1) throw new Error('Kolom ini tidak diterjemahkan.');
+  var it = { rec: { machine: 'x', description: 'x' }, cells: {} };
+  it.cells[key] = text;
+  prepareEdits_([it], TRANSLATE);
+  return { value: it.override.values[key] };
 }
 
 // ======================= Template.gs =======================
@@ -1323,6 +1456,7 @@ function completeRow_(name, sheetId, row, cur, notes) {
     descOrig: originalFromNote_(note('DESC')) || '',
     rootCause: get('ROOT_CAUSE'),
     solution: get('SOLUTION'),
+    pic: get('PIC'),
     discipline: get('DISCIPLINE'),
     end: get('END_TIME'),
     date: normDate_(get('DATE')),

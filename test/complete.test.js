@@ -8,7 +8,7 @@ const { loadGas, plain, readFixture } = require('./helpers');
 const { managerSpreadsheet, services } = require('./mock-sheets');
 
 const SAMPLE = readFixture('sample.txt');
-const FILES = ['Config.gs', 'Parser.gs', 'Translate.gs', 'Sheet.gs', 'Template.gs', 'Complete.gs', 'Ui.gs'];
+const FILES = ['Config.gs', 'Parser.gs', 'Translate.gs', 'Sheet.gs', 'Edit.gs', 'Template.gs', 'Complete.gs', 'Ui.gs'];
 
 /** Spreadsheet manajer + 2 laporan diimpor (Geely list (2) baris 18 & 19, H = Machine, E/F kosong). */
 function setup() {

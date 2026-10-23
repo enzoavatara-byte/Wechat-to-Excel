@@ -128,6 +128,20 @@
   .tag.green { background: var(--ok-bg); color: var(--ok); }
   a.tag { text-decoration: none; }
   .ok-text { color: var(--ok); }
+
+  /* ---------- edit isi sel (layar Periksa) ---------- */
+  .foot-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .foot-actions { display: flex; gap: 8px; margin-left: auto; }
+  .edit-form { border-top: 1px dashed var(--line); padding-top: 12px; }
+  .edit-form > .wide { grid-column: 1 / -1; }
+  .edit-form textarea, .edit-form input[type=text] { font-size: 13.5px; background: var(--card); }
+  .edit-form textarea { min-height: 0; padding: 8px 10px; line-height: 1.45; }
+  .edit-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px 16px; }
+  .edit-row select.disc { max-width: none; }
+  input.invalid { border-color: var(--ng); }
+  .mentor-opts { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; margin-top: 10px; font-size: 13px; color: var(--muted); }
+  .mentor-opts label { display: inline-flex; align-items: center; gap: 6px; margin: 0; font-size: 13px; font-weight: 500; color: var(--text); }
+  .mentor-opts .hint { margin: 0; }
   .warn-text { color: var(--warn); }
   .err-text { color: var(--ng); }
 
@@ -248,6 +262,7 @@
     .rec-head { flex-wrap: wrap; }
     .tags { margin-left: 34px; justify-content: flex-start; width: 100%; }
     .rec-head.static .tags { margin-left: 0; }
+    .edit-row { grid-template-columns: 1fr 1fr; }
     .rec-body { grid-template-columns: 1fr; padding-left: 16px; }
     .rec-foot { padding-left: 16px; }
     .kbd-hint { display: none; }
@@ -401,7 +416,7 @@
     </div>
   </div>
 
-  <script>var APP_MODE = <?!= JSON.stringify(mode) ?>; var CLIENT_VERSION = '588b4c3';</script>
+  <script>var APP_MODE = <?!= JSON.stringify(mode) ?>; var CLIENT_VERSION = '0c14b5d';</script>
   <script>
 (function () {
   'use strict';
@@ -416,11 +431,17 @@
     translate: true, // false setelah memilih "Lanjut tanpa terjemahan"
     newSheetFrom: '', // 'menu' (dialog sendiri) atau 'paste' (dari tautan "+ Sheet baru")
     importView: 'paste', // langkah impor terakhir, dipulihkan saat kembali ke tab Impor
+    edits: {},       // id -> { KEY_KOLOM: isi sel yang diubah manual } (lihat Edit.gs)
+    editing: {},     // id -> kartu sedang dalam mode edit?
+    written: [],     // hasil impor terakhir (untuk menyusun ulang teks mentor)
+    mentorOpts: { time: true, pic: true, status: true, where: false },
     cmp: null        // hasil listIncomplete + filter sheet
   };
 
   // Pertanyaan untuk mentor per kolom kosong (Root Cause & Solution selalu ditanyakan).
   var QUESTIONS = {
+    ROOT_CAUSE: 'Root cause?',
+    SOLUTION: 'Solusi?',
     MACHINE: 'Proyek / proses (Machine)?',
     DESC: 'Deskripsi masalah?',
     END_TIME: 'Jam selesai?',
@@ -539,6 +560,8 @@
       state.other = other;
       state.sel = {};
       state.disc = {};
+      state.edits = {};
+      state.editing = {};
       p.records.forEach(function (r) { state.sel[r.id] = r.include; state.disc[r.id] = r.discipline; });
       renderPreview();
       show('preview');
@@ -596,10 +619,14 @@
     if (r.duplicateOf) tags.push('<span class="tag amber">' + esc(dupText(r.duplicateOf)) + '</span>');
     if (r.sheetError) tags.push('<span class="tag red">' + esc(r.sheetError) + '</span>');
     else if (!r.writable) tags.push('<span class="tag red">tidak bisa ditulis</span>');
+    var nEdit = Object.keys(changed(r)).length;
+    if (nEdit) tags.push('<span class="tag blue">✎ ' + nEdit + ' sel diedit</span>');
     tags.push('<span class="tag outline">→ ' + esc(r.sheet) + '</span>');
+    var editing = !!state.editing[r.id];
+    var date = val(r, 'DATE'), end = val(r, 'END_TIME');
 
     var meta = [
-      r.date ? esc(r.date) : empty('tanggal ?'),
+      date ? esc(date) : empty('tanggal ?'),
       r.endDate ? 'selesai ' + esc(r.endDate) : '',
       r.durationText !== '-' ? esc(r.durationText) : ''
     ].filter(Boolean).join(' · ');
@@ -608,19 +635,22 @@
       '<label class="rec-head">' +
         '<input type="checkbox" data-id="' + r.id + '"' + (on ? ' checked' : '') + (can ? '' : ' disabled') + '>' +
         '<div class="when"><div class="time">' + (r.start ? esc(r.start) : empty('?')) +
-          '<span class="arrow">→</span>' + (r.end ? esc(r.end) : empty('?')) + '</div>' +
+          '<span class="arrow">→</span>' + (end ? esc(end) : empty('?')) + '</div>' +
           '<div class="meta">' + meta + '</div></div>' +
         '<div class="tags">' + tags.join('') + '</div>' +
       '</label>';
 
-    var body =
+    var e1 = val(r, 'ROOT_CAUSE'), f1 = val(r, 'SOLUTION'), k1 = val(r, 'NOTES');
+    var body = editing ? editForm(r, can) :
       '<div class="rec-body">' +
-        biField('Machine (C)', r.cells.C, r.translated && r.machine) +
+        biField('Machine (C)', val(r, 'MACHINE'), r.translated && r.machine) +
         '<div class="field"><div class="k">Discipline (H)</div><div class="v">' + disciplineSelect(r, can) + '</div></div>' +
-        biField('Deskripsi (D)', r.cells.D, r.translated && r.description, 'wide') +
-        field('PIC (I)', r.pic) +
+        biField('Deskripsi (D)', val(r, 'DESC'), r.translated && r.description, 'wide') +
+        (e1 ? biField('Root Cause (E)', e1, '', 'wide') : '') +
+        (f1 ? biField('Solution (F)', f1, '', 'wide') : '') +
+        field('PIC (I)', val(r, 'PIC')) +
         field('Level · Status', [r.level, r.lineStatus, r.handling].filter(Boolean).join(' · ')) +
-        (r.translated ? biField('Notes (K)', r.cells.K, '', 'wide notes-k') : '') +
+        (k1 ? biField('Notes (K)', k1, '', 'wide notes-k') : '') +
       '</div>';
 
     var warns = r.warnings.length
@@ -629,8 +659,13 @@
             '<span>' + esc(w.msg) + '</span></li>';
         }).join('') + '</ul>'
       : '';
+    var editBtns = !can ? '' : editing
+      ? '<button type="button" class="btn ghost sm" data-act="cancel-edit">Batalkan perubahan</button>' +
+        '<button type="button" class="btn primary sm" data-act="done-edit">✓ Selesai edit</button>'
+      : '<button type="button" class="btn ghost sm" data-act="edit">✎ Edit isi sel</button>';
     var foot = '<div class="rec-foot">' + warns +
-      '<div class="cells">Perlu dilengkapi manual: ' + colChips(r.empty) + '</div></div>';
+      '<div class="foot-row"><div class="cells">' + emptyLine(r) + '</div>' +
+      '<div class="foot-actions">' + editBtns + '</div></div></div>';
 
     var cls = 'rec ' + (on ? 'is-on' : 'is-off') + (can ? '' : ' is-blocked');
     return '<article class="' + cls + '" data-id="' + r.id + '">' + head + body + foot + '</article>';
@@ -665,18 +700,128 @@
   function picks() {
     return state.preview.records
       .filter(function (r) { return state.sel[r.id] && selectable(r); })
-      .map(function (r) { return { id: r.id, discipline: state.disc[r.id] }; });
+      .map(function (r) {
+        var p = { id: r.id, discipline: state.disc[r.id] };
+        var c = changed(r);
+        if (Object.keys(c).length) p.cells = c;
+        return p;
+      });
+  }
+
+  // ---------- Edit isi sel sebelum impor (Edit.gs) ----------
+  var TIME_RE = /^(\d{1,2})\s*[:.]\s*(\d{2})$/;
+  var DATE_RE = /^(\d{4})\s*[.\-\/]\s*(\d{1,2})\s*[.\-\/]\s*(\d{1,2})$/;
+
+  /** Isi sel hasil parser (yang akan ditulis kalau tidak diedit). */
+  function defaults(r) {
+    return { MACHINE: r.cells.C || '', DESC: r.cells.D || '', ROOT_CAUSE: '', SOLUTION: '',
+      END_TIME: r.end || '', PIC: r.pic || '', DATE: r.date || '', NOTES: r.cells.K || '' };
+  }
+  function val(r, k) {
+    var e = state.edits[r.id];
+    return e && e.hasOwnProperty(k) ? e[k] : defaults(r)[k];
+  }
+  /** Hanya kolom yang benar-benar berbeda dari hasil parser. */
+  function changed(r) {
+    var e = state.edits[r.id] || {}, d = defaults(r), out = {};
+    Object.keys(e).forEach(function (k) { if (e[k] !== d[k]) out[k] = e[k]; });
+    return out;
+  }
+  function invalidEdit(k, v) {
+    v = String(v || '').trim();
+    if (!v || (k !== 'END_TIME' && k !== 'DATE')) return false;
+    if (k === 'END_TIME') { var t = TIME_RE.exec(v); return !t || +t[1] > 23 || +t[2] > 59; }
+    var d = DATE_RE.exec(v);
+    if (!d) return true;
+    var dt = new Date(Date.UTC(+d[1], +d[2] - 1, +d[3]));
+    return dt.getUTCMonth() !== +d[2] - 1 || dt.getUTCDate() !== +d[3];
+  }
+  function hasInvalid(r) {
+    var c = changed(r);
+    return ['END_TIME', 'DATE'].some(function (k) { return c.hasOwnProperty(k) && invalidEdit(k, c[k]); });
+  }
+  function emptyLine(r) {
+    var list = emptyNow(r);
+    return 'Perlu dilengkapi manual: ' + (list.length ? colChips(list) : '<span class="ok-text">tidak ada ✓</span>');
+  }
+  function emptyNow(r) {
+    return [['ROOT_CAUSE', 'E'], ['SOLUTION', 'F'], ['MACHINE', 'C'], ['DESC', 'D'], ['END_TIME', 'G'],
+      ['DISCIPLINE', 'H'], ['PIC', 'I'], ['DATE', 'J']].filter(function (p) {
+      var v = p[0] === 'DISCIPLINE' ? state.disc[r.id] : val(r, p[0]);
+      return !String(v || '').trim();
+    }).map(function (p) { return { key: p[0], col: p[1] }; });
+  }
+
+  function editText(r, k, label, rows, orig) {
+    var tr = state.preview.translated
+      ? '<button type="button" class="link small" data-act="tr" data-key="' + k + '">↻ Terjemahkan</button>' : '';
+    return '<div class="field"><div class="label-row"><label class="k" for="ed-' + r.id + '-' + k + '">' + esc(label) + '</label>' + tr + '</div>' +
+      '<textarea id="ed-' + r.id + '-' + k + '" data-edit="' + k + '" rows="' + rows + '">' + esc(val(r, k)) + '</textarea>' +
+      (orig ? '<p class="hint">Asli: ' + esc(orig) + '</p>' : '') + '</div>';
+  }
+  function editInput(r, k, label, ph) {
+    var v = val(r, k), bad = invalidEdit(k, v);
+    return '<div class="field"><label class="k" for="ed-' + r.id + '-' + k + '">' + esc(label) + '</label>' +
+      '<input type="text" id="ed-' + r.id + '-' + k + '" data-edit="' + k + '" value="' + esc(v) + '" placeholder="' + esc(ph) + '"' +
+      (bad ? ' class="invalid"' : '') + '>' +
+      ((k === 'END_TIME' || k === 'DATE') ? '<p class="hint err-text' + (bad ? '' : ' hidden') + '" data-err="' + k + '">Format: ' +
+        (k === 'DATE' ? 'tahun/bulan/tanggal, mis. 2026/10/20' : 'jam:menit, mis. 20:30') + '</p>' : '') + '</div>';
+  }
+  function editForm(r, can) {
+    return '<div class="rec-body edit-form">' +
+      editText(r, 'MACHINE', 'Machine (C)', 2, r.machine) +
+      editText(r, 'DESC', 'Deskripsi (D)', 3, r.description) +
+      editText(r, 'ROOT_CAUSE', 'Root Cause (E)', 3) +
+      editText(r, 'SOLUTION', 'Solution (F)', 3) +
+      '<div class="wide edit-row">' +
+        editInput(r, 'END_TIME', 'End Time (G)', 'mis. 20:30') +
+        '<div class="field"><div class="k">Discipline (H)</div>' + disciplineSelect(r, can) + '</div>' +
+        editInput(r, 'PIC', 'PIC (I)', 'nama, pisahkan dengan koma') +
+        editInput(r, 'DATE', 'Date (J)', 'mis. 2026/10/20') +
+      '</div>' +
+      '<div class="wide">' + editText(r, 'NOTES', 'Notes (K)', 3) + '</div>' +
+      '<p class="hint wide">' + (state.preview.translated
+        ? 'Teks tanpa huruf Mandarin dianggap Bahasa Indonesia dan diterjemahkan saat impor; klik ↻ untuk melihat hasilnya sekarang. Teks berhuruf Mandarin ditulis apa adanya.'
+        : 'Tanpa terjemahan: isi ditulis apa adanya.') + '</p>' +
+    '</div>';
+  }
+
+  function rerenderCard(id) {
+    var r = state.preview.records.filter(function (x) { return x.id === id; })[0];
+    var art = document.querySelector('#rec-list .rec[data-id="' + id + '"]');
+    if (!r || !art) return null;
+    var tmp = document.createElement('div');
+    tmp.innerHTML = card(r);
+    var fresh = tmp.firstChild;
+    art.parentNode.replaceChild(fresh, art);
+    updateCounts();
+    return fresh;
+  }
+
+  function translateField(art, key, btn) {
+    var id = Number(art.getAttribute('data-id'));
+    var ta = art.querySelector('[data-edit="' + key + '"]');
+    if (!ta || !ta.value.trim()) return;
+    busy(btn, true, 'Menerjemahkan…');
+    call('translateCell', key, ta.value).then(function (res) {
+      ta.value = res.value;
+      (state.edits[id] = state.edits[id] || {})[key] = res.value;
+      updateCounts();
+    }).catch(function (e) { flash(cleanErr(e)); })
+      .then(function () { busy(btn, false); });
   }
 
   function updateCounts() {
     var n = picks().length, total = state.preview.records.length;
     var blocked = !!state.preview.translateError; // impor dengan terjemahan pasti gagal lagi
+    var invalid = state.preview.records.some(function (r) { return state.sel[r.id] && hasInvalid(r); });
     if ($('sel-count')) $('sel-count').textContent = n;
     $('act-note').textContent = n + ' dari ' + total + ' laporan dipilih';
     var btn = $('btn-import');
     if (!btn.classList.contains('is-busy')) {
-      btn.textContent = blocked ? 'Terjemahan gagal' : (n ? 'Impor ' + n + ' laporan' : 'Belum ada yang dipilih');
-      btn.disabled = !n || blocked;
+      btn.textContent = blocked ? 'Terjemahan gagal' : invalid ? 'Ada jam/tanggal tidak valid'
+        : (n ? 'Impor ' + n + ' laporan' : 'Belum ada yang dipilih');
+      btn.disabled = !n || blocked || invalid;
     }
   }
 
@@ -735,9 +880,16 @@
           '<td><div class="chips">' + colChips(x.empty) + '</div></td></tr>';
       }).join('') + '</tbody></table></div></div>' : '';
 
+    state.written = w;
+    var opt = function (k, label) {
+      return '<label><input type="checkbox" data-opt="' + k + '"' + (state.mentorOpts[k] ? ' checked' : '') + '> ' + esc(label) + '</label>';
+    };
     var mentor = w.length ? '<div class="card"><div class="card-row"><h2>Pertanyaan untuk mentor</h2>' +
       '<button type="button" class="btn ghost sm" id="btn-copy">Salin</button></div>' +
-      '<div class="muted small">Teks siap kirim untuk melengkapi kolom yang kosong. Boleh diedit dulu.</div>' +
+      '<div class="muted small">Teks siap kirim untuk melengkapi kolom yang kosong. Boleh diedit langsung di kotak ini.</div>' +
+      '<div class="mentor-opts"><span>Sertakan:</span>' + opt('time', 'Waktu & durasi') + opt('pic', 'PIC') +
+        opt('status', 'Jenis & status') + opt('where', 'Sheet & baris') +
+        '<span class="hint">Mengubah pilihan menyusun ulang teks.</span></div>' +
       '<textarea id="mentor-text" class="mono">' + esc(mentorText(w)) + '</textarea></div>' : '';
 
     var actions = '<div class="end-actions">' +
@@ -748,13 +900,33 @@
     $('view-result').innerHTML = hero + errors + table + mentor + actions;
   }
 
+  function minutesBetween(a, b) {
+    var p = function (s) { var m = /^(\d{1,2}):(\d{2})$/.exec(s || ''); return m ? +m[1] * 60 + +m[2] : null; };
+    var x = p(a), y = p(b);
+    return x !== null && y !== null && y >= x ? y - x : null;
+  }
+
   function mentorText(written) {
+    var o = state.mentorOpts;
+    var rows = written.filter(function (x) { return x.empty.some(function (y) { return QUESTIONS[y.key]; }); });
+    if (!rows.length) return 'Semua kolom sudah terisi, tidak ada yang perlu ditanyakan.';
     var out = ['Mohon bantuannya untuk melengkapi laporan berikut:', ''];
-    written.forEach(function (x, i) {
-      out.push((i + 1) + ') No. ' + x.no + ' · ' + [x.date, x.start].filter(Boolean).join(' ') + ' · ' + (x.machine || '-'));
+    rows.forEach(function (x, i) {
+      out.push((i + 1) + ') No. ' + x.no + ' · ' + (x.machine || '-'));
+      if (o.time) {
+        var d = minutesBetween(x.start, x.end);
+        var dur = d !== null ? d + ' menit' : (x.durationText && x.durationText !== '-' ? x.durationText : '');
+        var when = [x.date, [x.start, x.end].filter(Boolean).join('–')].filter(Boolean).join(' ');
+        if (when || dur) out.push('   Waktu: ' + when + (dur ? ' (' + dur + ')' : ''));
+      }
       if (x.description) out.push('   Masalah: ' + x.description.replace(/\s*\n\s*/g, '; '));
-      out.push('   - Root cause?');
-      out.push('   - Solusi?');
+      if (o.pic && x.pic) out.push('   PIC: ' + x.pic);
+      if (o.status) {
+        var st = [x.type && 'Jenis: ' + x.type, x.lineStatus && 'Status lini: ' + x.lineStatus,
+          x.handling && 'Penanganan: ' + x.handling].filter(Boolean).join(' · ');
+        if (st) out.push('   ' + st);
+      }
+      if (o.where) out.push('   Lokasi: ' + x.sheet + ' baris ' + x.row);
       x.empty.forEach(function (y) {
         var q = QUESTIONS[y.key];
         if (!q) return;
@@ -904,7 +1076,7 @@
           '<a class="tag outline" href="' + esc(rowUrl(state.cmp.url, r)) + '" target="_blank" rel="noopener">Buka di sheet ↗</a></div>' +
       '</div>';
     var body = '<div class="rec-body">' + biField('Machine (C)', r.machine, r.machineOrig) +
-      biField('Deskripsi (D)', r.description, r.descOrig, 'wide') + '</div>';
+      biField('Deskripsi (D)', r.description, r.descOrig, 'wide') + field('PIC (I)', r.pic) + '</div>';
     var disc = isEmptyStr(r.discipline)
       ? '<div class="field"><label class="k">Discipline (H)</label><select class="cmp-input disc is-empty" data-name="discipline">' +
         '<option value="">— kosong —</option>' + state.cmp.disciplines.map(function (d) {
@@ -1017,6 +1189,51 @@
       state.disc[id] = t.value;
       t.classList.toggle('is-empty', !t.value);
     }
+  });
+
+  $('view-result').addEventListener('change', function (e) {
+    var k = e.target.getAttribute('data-opt');
+    if (!k) return;
+    state.mentorOpts[k] = e.target.checked;
+    $('mentor-text').value = mentorText(state.written);
+  });
+
+  // Mode edit kartu di layar Periksa.
+  $('rec-list').addEventListener('click', function (e) {
+    var b = e.target.closest('[data-act]');
+    if (!b) return;
+    var art = b.closest('.rec'), id = Number(art.getAttribute('data-id'));
+    var act = b.getAttribute('data-act');
+    if (act === 'edit') {
+      state.editing[id] = true;
+      var fresh = rerenderCard(id);
+      if (fresh) fresh.querySelector('textarea').focus();
+    } else if (act === 'done-edit') {
+      var bad = art.querySelector('input.invalid');
+      if (bad) { bad.focus(); return; }
+      state.editing[id] = false;
+      rerenderCard(id);
+    } else if (act === 'cancel-edit') {
+      delete state.edits[id];
+      state.editing[id] = false;
+      rerenderCard(id);
+    } else if (act === 'tr') {
+      translateField(art, b.getAttribute('data-key'), b);
+    }
+  });
+  $('rec-list').addEventListener('input', function (e) {
+    var k = e.target.getAttribute('data-edit');
+    if (!k) return;
+    var art = e.target.closest('.rec'), id = Number(art.getAttribute('data-id'));
+    (state.edits[id] = state.edits[id] || {})[k] = e.target.value;
+    if (k === 'END_TIME' || k === 'DATE') {
+      var bad = invalidEdit(k, e.target.value);
+      e.target.classList.toggle('invalid', bad);
+      art.querySelector('[data-err="' + k + '"]').classList.toggle('hidden', !bad);
+    }
+    var r = state.preview.records.filter(function (x) { return x.id === id; })[0];
+    art.querySelector('.foot-row .cells').innerHTML = emptyLine(r);
+    updateCounts();
   });
 
   $('view-result').addEventListener('click', function (e) {

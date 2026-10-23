@@ -115,17 +115,28 @@ function asText_(v) {
  * - Catatan sel C, D, K diisi teks asli + peringatan (kalau diterjemahkan), selain itu dikosongkan.
  * - G dan J ditulis sebagai nomor seri + format sel, bukan objek Date,
  *   jadi hasilnya tidak bergeser walau timezone script ≠ timezone spreadsheet.
+ * - `override` (dari "✎ Edit" di layar Periksa, lihat Edit.gs) menggantikan nilai/catatan hasil parser;
+ *   E/F hanya ditulis kalau ada di override.
+ * Mengembalikan nilai akhir yang ditulis (sebelum awalan ').
  */
-function writeRecord(sh, row, rec) {
+function writeRecord(sh, row, rec, override) {
   var out = buildRow_(rec);
-  ['MACHINE', 'DESC', 'PIC'].forEach(function (k) { out.values[k] = asText_(out.values[k]); });
+  if (override) {
+    Object.keys(override.values).forEach(function (k) { out.values[k] = override.values[k]; });
+    Object.keys(override.notes).forEach(function (k) { out.notes[k] = override.notes[k]; });
+  }
+  var finalValues = {};
+  Object.keys(out.values).forEach(function (k) { finalValues[k] = out.values[k]; });
+  ['MACHINE', 'DESC', 'ROOT_CAUSE', 'SOLUTION', 'PIC', 'NOTES'].forEach(function (k) {
+    if (out.values.hasOwnProperty(k)) out.values[k] = asText_(out.values[k]);
+  });
   var noCell = sh.getRange(row, COL.NO);
   var no = noCell.getValue();
   if (isEmpty_(no)) {
     no = nextNumber_(sh, row);
     noCell.setValue(no);
   }
-  // Satu panggilan setValues per kelompok kolom yang bersebelahan (C:D dan G:K).
+  // Satu panggilan setValues per kelompok kolom yang bersebelahan (C:D dan G:K, atau C:K kalau E/F diisi).
   var cols = Object.keys(out.values).map(function (k) { return { col: COL[k], value: out.values[k] }; })
     .sort(function (a, b) { return a.col - b.col; });
   var run = [];
@@ -142,7 +153,7 @@ function writeRecord(sh, row, rec) {
   for (var c = COL.MACHINE; c <= COL.NOTES; c++) notes.push('');
   Object.keys(out.notes).forEach(function (k) { notes[COL[k] - COL.MACHINE] = out.notes[k]; });
   sh.getRange(row, COL.MACHINE, 1, notes.length).setNotes([notes]).setBackground(null);
-  return { row: row, no: no };
+  return { row: row, no: no, values: finalValues };
 }
 
 /**
@@ -238,6 +249,26 @@ function sheetInfo_(ss, name) {
   return { error: '', nextRow: findNextRow(sh), keys: existingKeys_(sh) };
 }
 
+/** Ringkasan baris yang sudah ditulis (dengan isian yang diedit) untuk halaman Selesai & teks mentor. */
+function writtenView_(rec, it, v) {
+  var view = toView_(rec);
+  var cells = it.cells;
+  var typed = function (k) {
+    var s = cleanLines_(String(cells[k] || '')).join('\n');
+    return cells.hasOwnProperty(k) && s && !hasChinese_(s) ? s : '';
+  };
+  view.cells = { C: v.MACHINE, D: v.DESC, K: v.NOTES };
+  view.pic = v.PIC;
+  view.machine = typed('MACHINE') || view.machine;
+  view.description = typed('DESC') || view.description;
+  if (cells.hasOwnProperty('END_TIME')) view.end = v.END_TIME === '' ? '' : fmtTime_(parseEditTime_(cells.END_TIME));
+  if (cells.hasOwnProperty('DATE')) view.date = v.DATE === '' ? '' : fmtDate_(parseEditDate_(cells.DATE));
+  view.empty = ['ROOT_CAUSE', 'SOLUTION', 'MACHINE', 'DESC', 'END_TIME', 'DISCIPLINE', 'PIC', 'DATE']
+    .filter(function (k) { return v[k] === '' || v[k] === undefined || v[k] === null; })
+    .map(function (k) { return { key: k, col: colLetter_(COL[k]) }; });
+  return view;
+}
+
 /** Record -> objek polos untuk UI (label sudah diformat, `cells` = isi sel yang akan ditulis). */
 function toView_(r) {
   var row = buildRow_(r);
@@ -291,17 +322,26 @@ function importWeChat(text, otherSheet, picks, opts) {
     var errors = [];
     var recs = parseReports(text).filter(function (rec) { return chosen.hasOwnProperty(rec.id); });
     recs.forEach(function (rec) { applyDisciplineChoice_(rec, chosen[rec.id].discipline); });
-    if (wantTranslate_(opts)) {
-      try {
-        translateRecords_(recs.filter(function (r) { return r.writable; }));
-      } catch (e) {
-        throw new Error('Terjemahan gagal, tidak ada yang ditulis: ' + (e.message || e) + '. Coba lagi, atau lanjut tanpa terjemahan.');
-      }
+    // Terjemahan hasil parser + isian yang diedit, semuanya SEBELUM menulis.
+    var items = recs.filter(function (r) { return r.writable; })
+      .map(function (r) { return { rec: r, cells: chosen[r.id].cells || {} }; });
+    var edited = {};
+    try {
+      if (wantTranslate_(opts)) translateRecords_(items.map(function (it) { return it.rec; }));
+      prepareEdits_(items, wantTranslate_(opts));
+    } catch (e) {
+      throw new Error('Terjemahan gagal, tidak ada yang ditulis: ' + (e.message || e) + '. Coba lagi, atau lanjut tanpa terjemahan.');
     }
+    items.forEach(function (it) { edited[it.rec.id] = it; });
     recs.forEach(function (rec) {
       var label = (fmtTime_(rec.start.time) || '??:??') + ' ' + (rec.machine || rec.description);
       if (!rec.writable) {
         errors.push(label + ': Machine & Deskripsi kosong, tidak ditulis.');
+        return;
+      }
+      var it = edited[rec.id];
+      if (it.error) {
+        errors.push(label + ': ' + it.error + '. Tidak ditulis.');
         return;
       }
       var name = targetSheetName_(rec, other, routes);
@@ -313,9 +353,9 @@ function importWeChat(text, otherSheet, picks, opts) {
         return;
       }
       var row = findNextRow(sh, nextFrom[name]);
-      var res = writeRecord(sh, row, rec);
+      var res = writeRecord(sh, row, rec, it.override);
       nextFrom[name] = row + 1;
-      var view = toView_(rec);
+      var view = writtenView_(rec, it, res.values);
       view.sheet = name;
       view.sheetId = sh.getSheetId();
       view.row = row;
