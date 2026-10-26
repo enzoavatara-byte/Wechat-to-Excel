@@ -135,6 +135,10 @@ Tab **Lengkapi** di kepala halaman (angka = jumlah baris yang belum lengkap), to
   resmi stasiun (Finishing, Press Modul, …) ke mentor/manajer **sekali**, masukkan ke `TERMS`, maka C konsisten.
 - **Teks asli Indonesia** disimpan sebagai **catatan sel** (segitiga kecil di pojok, muncul saat kursor di atasnya):
   C & D berisi teks aslinya, K berisi field asli + semua peringatan. Deteksi duplikat memakai teks asli ini.
+- **Hemat kuota:** teks yang sudah pernah diterjemahkan dalam 6 jam terakhir diambil dari cache (pratinjau lalu impor =
+  satu kali terjemahan). Kena batas per menit → otomatis tunggu 2/4/8 detik lalu coba lagi. **Kuota harian habis** →
+  otomatis memakai rumus `GOOGLETRANSLATE` di sheet tersembunyi sementara (dihapus lagi setelahnya), yang kuotanya
+  terpisah. `setup` menampilkan perkiraan jumlah panggilan hari ini.
 - **Kalau terjemahan gagal** (kuota habis, jaringan): tidak ada yang ditulis; layar Periksa menawarkan
   *Coba lagi* atau *Lanjut tanpa terjemahan*. Mematikan permanen: `TRANSLATE = false` di Config.
 
@@ -276,6 +280,7 @@ Field yang gagal terbaca **dikosongkan**, dan teks aslinya dicatat di catatan se
 | Gejala | Penyebab paling mungkin | Solusi |
 |---|---|---|
 | "The data you entered in cell H… violates the data validation rules" saat **Terjemahkan sel terpilih** | Bug versi sebelum `e3b0860`: menu ikut menerjemahkan H (dropdown) | Copy ulang `dist/Code.gs`. Kalau sebagian sel sempat berubah, cek catatan sel "Asli (ID): …" atau pakai Edit → Undo / Version history. Kalau I2:I5 (sumber dropdown) sempat ikut diterjemahkan, kembalikan ke Machine / Operation / Product Item / MES; `setup` akan menandai `✗` kalau masih beda |
+| **"Service invoked too many times …: translate"** | Kuota Google Translate (LanguageApp). *"in a short time"* = batas per menit; *"for one day"* = kuota harian akun (±5.000 panggilan untuk Gmail) | Versi `2034eef` ke atas: batas per menit dicoba ulang otomatis, kuota harian beralih ke rumus `GOOGLETRANSLATE`. Kalau keduanya gagal: tunggu ±24 jam sejak panggilan pertama hari itu, atau *Lanjut tanpa terjemahan* lalu terjemahkan nanti lewat tab **Lengkapi** / menu. Baris `Panggilan Google Translate hari ini` di `setup` menunjukkan seberapa dekat ke batas |
 | **Tidak berubah setelah copy ulang kode** | (1) Web app `/exec` masih memakai versi deployment lama; (2) file lama dari `src/` (Config, Parser, Sheet, Ui, App, Styles) masih ada di proyek dan menimpa `Code.gs`; (3) editor belum disimpan / tab spreadsheet belum di-reload; (4) laporan yang sama di-paste ulang → ditandai duplikat & tidak dicentang, baris lama tidak berubah sendiri | Cek **versi** di kepala halaman (dan baris `Versi kode` di `setup`) = versi di `dist/Code.gs` (`APP_VERSION`). Web app: Deploy → Manage deployments → pensil → **New version**. Hapus semua file selain `Code.gs`, `Index`, `appsscript.json`. Simpan (Ctrl+S), reload tab. Baris lama hasil uji: hapus isi C:K lalu impor ulang |
 | Ragu setup sudah benar | – | **WeChat Import → Cek setup** (atau Run `setup`): semua baris harus `✓` |
 | Menu **WeChat Import** tidak muncul | Tab belum di-reload setelah paste kode, atau `onOpen` salah ketik | Reload tab spreadsheet; pastikan file `Ui` berisi fungsi `onOpen` |

@@ -206,12 +206,13 @@ test('tanpa terjemahan (translate: false): Bahasa Indonesia, peringatan di K, ta
   assert.equal(tr.calls.length, 0);
 });
 
-test('terjemahan gagal: pratinjau tetap tampil + pesan, impor tidak menulis apa pun', () => {
-  const { gas, geely, tr } = setup();
+test('terjemahan gagal total (kuota habis + rumus gagal): pratinjau tetap tampil + pesan, impor tidak menulis', () => {
+  const { gas, geely, tr, ss } = setup();
   tr.fail = true;
+  ss.formulaFail = true;
   const p = plain(gas.previewWeChat(SAMPLE, 'LImo 7 list'));
   assert.equal(p.translated, false);
-  assert.match(p.translateError, /^Terjemahan gagal: Service invoked too many times/);
+  assert.match(p.translateError, /^Terjemahan gagal: Kuota harian Google Translate untuk akun ini habis \(\d+ panggilan hari ini\), dan cadangan rumus GOOGLETRANSLATE juga gagal: hasil rumus #VALUE!/);
   assert.equal(p.records[3].cells.C, 'E245 - Press Modul');
   const writes = geely.writes;
   assert.throws(() => gas.importWeChat(SAMPLE, 'LImo 7 list', defaultPicks(p)), /Terjemahan gagal, tidak ada yang ditulis/);

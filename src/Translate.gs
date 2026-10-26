@@ -58,9 +58,13 @@ function fixZh_(s) {
 }
 
 /**
- * Terjemahkan array teks (boleh multi-baris) dengan sesedikit mungkin panggilan LanguageApp:
- * semua baris digabung per potongan ±4.000 karakter. Kalau jumlah baris hasil tidak sama
- * (penerjemah menggabung/memecah baris), potongan itu diulang per baris supaya tidak salah pasang.
+ * Terjemahkan array teks (boleh multi-baris), hemat kuota Google Translate:
+ * 1. Baris yang pernah diterjemahkan (6 jam terakhir) diambil dari cache, tanpa panggilan.
+ * 2. Sisanya dikirim sekaligus per potongan ±4.000 karakter (satu panggilan per bahasa).
+ *    Kalau jumlah baris hasil tidak cocok, diulang SEKALI dalam mode HTML (tiap baris = <p>),
+ *    baru kalau masih tidak cocok per baris dengan jeda (bukan beruntun).
+ * 3. Kena batas per menit -> tunggu lalu coba lagi. Kuota harian habis -> pakai rumus
+ *    GOOGLETRANSLATE di sheet sementara (kuota terpisah dari LanguageApp).
  */
 function translateTexts_(texts, from, to) {
   var lines = [];
@@ -70,19 +74,59 @@ function translateTexts_(texts, from, to) {
     counts.push(ls.length);
     Array.prototype.push.apply(lines, ls);
   });
-  var out = [];
-  chunkLines_(lines, TRANSLATE_CHUNK_CHARS).forEach(function (chunk) {
-    var res = callTranslate_(chunk.join('\n'), from, to).split('\n');
-    if (res.length !== chunk.length) res = chunk.map(function (l) { return callTranslate_(l, from, to); });
-    Array.prototype.push.apply(out, res);
+  var done = cacheGet_(lines, from, to);
+  var todo = [];
+  lines.forEach(function (l) {
+    if (l.trim() && !done.hasOwnProperty(l) && todo.indexOf(l) === -1) todo.push(l);
   });
+  if (todo.length) {
+    var res = translateLines_(todo, from, to);
+    var fresh = {};
+    todo.forEach(function (l, i) { fresh[l] = done[l] = res[i].trim(); });
+    cachePut_(fresh, from, to);
+  }
   var result = [];
   var k = 0;
   counts.forEach(function (n) {
-    result.push(out.slice(k, k + n).map(function (l) { return l.trim(); }).join('\n'));
+    result.push(lines.slice(k, k + n).map(function (l) { return l.trim() ? done[l] : ''; }).join('\n'));
     k += n;
   });
   return result;
+}
+
+/** Baris unik (tanpa baris kosong) -> terjemahan, dengan LanguageApp lalu cadangan rumus. */
+function translateLines_(lines, from, to) {
+  try {
+    var out = [];
+    chunkLines_(lines, TRANSLATE_CHUNK_CHARS).forEach(function (chunk) {
+      var res = callTranslate_(chunk.join('\n'), from, to, 'text').split('\n');
+      if (res.length !== chunk.length) res = translateHtml_(chunk, from, to);
+      if (!res) res = chunk.map(function (l, i) { if (i) Utilities.sleep(300); return callTranslate_(l, from, to, 'text'); });
+      Array.prototype.push.apply(out, res);
+    });
+    return out;
+  } catch (e) {
+    if (quotaKind_(e) !== 'day') throw e;
+    try {
+      return translateWithFormula_(lines, from, to);
+    } catch (e2) {
+      throw new Error('Kuota harian Google Translate untuk akun ini habis (' + translateCallsToday_() +
+        ' panggilan hari ini), dan cadangan rumus GOOGLETRANSLATE juga gagal: ' + (e2.message || e2) +
+        '. Kuota pulih ±24 jam setelah panggilan pertama hari itu.');
+    }
+  }
+}
+
+/** Potongan baris dalam satu panggilan HTML: tiap baris dibungkus <p>…</p>. null kalau tetap tidak cocok. */
+function translateHtml_(chunk, from, to) {
+  var esc = function (s) { return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); };
+  var html = chunk.map(function (l) { return '<p>' + esc(l) + '</p>'; }).join('');
+  var out = callTranslate_(html, from, to, 'html');
+  var res = [];
+  var re = /<p[^>]*>([\s\S]*?)<\/p>/gi;
+  var m;
+  while ((m = re.exec(out)) !== null) res.push(m[1].replace(/<[^>]+>/g, '').trim());
+  return res.length === chunk.length ? res : null;
 }
 
 function chunkLines_(lines, max) {
@@ -102,11 +146,108 @@ function chunkLines_(lines, max) {
   return chunks;
 }
 
-function callTranslate_(text, from, to) {
-  var out = LanguageApp.translate(text, from, to, { contentType: 'text' });
-  return String(out).replace(/&(amp|lt|gt|quot|#39);/g, function (m, e) {
-    return { amp: '&', lt: '<', gt: '>', quot: '"', '#39': "'" }[e];
-  });
+/** 'rate' = batas per menit ("in a short time"), 'day' = kuota harian, '' = error lain. */
+function quotaKind_(e) {
+  var m = String((e && e.message) || e);
+  if (!/too many times/i.test(m)) return '';
+  return /short time|per minute|rate/i.test(m) ? 'rate' : 'day';
+}
+
+/** Satu panggilan LanguageApp; batas per menit -> tunggu 2, 4, 8 detik lalu coba lagi. */
+function callTranslate_(text, from, to, contentType) {
+  var wait = 2000;
+  for (var attempt = 0; ; attempt++) {
+    try {
+      countTranslateCall_();
+      var out = LanguageApp.translate(text, from, to, { contentType: contentType || 'text' });
+      return String(out).replace(/&(amp|lt|gt|quot|#39);/g, function (m, e) {
+        return { amp: '&', lt: '<', gt: '>', quot: '"', '#39': "'" }[e];
+      });
+    } catch (e) {
+      if (quotaKind_(e) !== 'rate' || attempt >= 3) throw e;
+      Utilities.sleep(wait);
+      wait *= 2;
+    }
+  }
+}
+
+// ---------- Cadangan: rumus GOOGLETRANSLATE ----------
+
+/**
+ * Dipakai hanya kalau kuota harian LanguageApp habis. Baris ditulis ke sheet tersembunyi sementara
+ * berisi =GOOGLETRANSLATE(A1, from, to), hasil dibaca, lalu sheet itu dihapus lagi.
+ */
+function translateWithFormula_(lines, from, to) {
+  var ss = ss_();
+  var prev = ss.getActiveSheet(); // insertSheet memindahkan tab aktif; dikembalikan setelah selesai
+  var sh = ss.insertSheet('_wechat_translate_' + Date.now());
+  try {
+    sh.hideSheet();
+    sh.getRange(1, 1, lines.length, 1).setValues(lines.map(function (l) { return [asText_(l)]; }));
+    sh.getRange(1, 2, lines.length, 1).setFormulas(lines.map(function (l, i) {
+      return ['=GOOGLETRANSLATE(A' + (i + 1) + ',"' + from + '","' + to + '")'];
+    }));
+    for (var attempt = 0; attempt < 30; attempt++) {
+      SpreadsheetApp.flush();
+      var out = sh.getRange(1, 2, lines.length, 1).getDisplayValues().map(function (r) { return String(r[0]); });
+      var pending = out.some(function (v) { return !v.trim() || /^(Loading|Memuat)/i.test(v); });
+      if (!pending) {
+        var bad = out.filter(function (v) { return /^#[A-Z\/!?0-9]+/.test(v); });
+        if (bad.length) throw new Error('hasil rumus ' + bad[0]);
+        return out;
+      }
+      Utilities.sleep(500);
+    }
+    throw new Error('rumus belum selesai setelah 15 detik');
+  } finally {
+    ss.deleteSheet(sh);
+    try { prev.activate(); } catch (e) { /* web app tanpa tampilan */ }
+  }
+}
+
+// ---------- Cache & penghitung (opsional: kalau layanan tidak tersedia, dilewati) ----------
+
+var TRANSLATE_CACHE_SECONDS = 6 * 3600; // batas maksimum CacheService
+
+function cacheKey_(line, from, to) {
+  var bytes = Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, from + '>' + to + '|' + line, Utilities.Charset.UTF_8);
+  return 'tr:' + Utilities.base64Encode(bytes);
+}
+
+function cacheGet_(lines, from, to) {
+  var found = {};
+  try {
+    var keys = {};
+    lines.forEach(function (l) { if (l.trim()) keys[cacheKey_(l, from, to)] = l; });
+    var hit = CacheService.getScriptCache().getAll(Object.keys(keys));
+    Object.keys(hit).forEach(function (k) { found[keys[k]] = hit[k]; });
+  } catch (e) { /* tanpa cache */ }
+  return found;
+}
+
+function cachePut_(map, from, to) {
+  try {
+    var vals = {};
+    Object.keys(map).forEach(function (l) { vals[cacheKey_(l, from, to)] = map[l]; });
+    CacheService.getScriptCache().putAll(vals, TRANSLATE_CACHE_SECONDS);
+  } catch (e) { /* tanpa cache */ }
+}
+
+/** Perkiraan jumlah panggilan LanguageApp hari ini (UTC), untuk pesan error & setup. */
+function translateCallsToday_() {
+  try {
+    return Number(PropertiesService.getScriptProperties().getProperty('trCalls:' + new Date().toISOString().slice(0, 10)) || 0);
+  } catch (e) {
+    return '?';
+  }
+}
+
+function countTranslateCall_() {
+  try {
+    var props = PropertiesService.getScriptProperties();
+    var key = 'trCalls:' + new Date().toISOString().slice(0, 10);
+    props.setProperty(key, String(Number(props.getProperty(key) || 0) + 1));
+  } catch (e) { /* tanpa penghitung */ }
 }
 
 // ---------- Format sel ----------

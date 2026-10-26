@@ -95,8 +95,9 @@ test('G/J/I dikosongkan dengan sengaja -> sel kosong, masuk daftar perlu dilengk
 });
 
 test('terjemahan isian gagal -> tidak ada yang ditulis sama sekali', () => {
-  const { gas, geely, tr } = setup();
+  const { gas, geely, tr, ss } = setup();
   tr.fail = true;
+  ss.formulaFail = true;
   assert.throws(() => imp(gas, { ROOT_CAUSE: 'baut longgar' }), /Terjemahan gagal, tidak ada yang ditulis/);
   assert.equal(geely.get('C18'), undefined);
 });

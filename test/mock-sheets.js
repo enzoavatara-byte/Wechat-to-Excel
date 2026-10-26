@@ -4,6 +4,7 @@
  * Format (font, rata, wrap, border, merge, lebar/tinggi) hanya dicatat untuk diperiksa test.
  */
 'use strict';
+const crypto = require('crypto');
 
 const pad = (n) => String(n).padStart(2, '0');
 
@@ -53,7 +54,8 @@ class MockRange {
     return out;
   }
   getValues() { return this.grid((x) => (x.v === undefined ? '' : unquote(x.v))); }
-  getDisplayValues() { return this.grid((x) => display(x.v, x.f)); }
+  getDisplayValues() { return this.grid((x) => this.sheet.evaluate(x) ?? display(x.v, x.f)); }
+  setFormulas(f) { return this.setValues(f); }
   getValue() { return this.getValues()[0][0]; }
   setValues(v) {
     if (v.length !== this.nr || v[0].length !== this.nc) throw new Error('Ukuran setValues tidak cocok');
@@ -130,6 +132,13 @@ class MockSheet {
   set(a1, v) { const [r, c] = parseA1(a1); this.cell(r, c).v = v; return this; }
   getName() { return this.name; }
   getSheetId() { return this.id; }
+  hideSheet() { this.props.hidden = true; return this; }
+  /** Rumus =GOOGLETRANSLATE(A1,"id","en") dihitung lewat penerjemah palsu spreadsheet (kalau ada). */
+  evaluate(x) {
+    const m = typeof x.v === 'string' && /^=GOOGLETRANSLATE\(([A-Z])(\d+),"([^"]+)","([^"]+)"\)$/.exec(x.v);
+    if (!m || !this.ss || !this.ss.formulaTranslate) return null;
+    return this.ss.formulaTranslate(unquote(this.get(m[1] + m[2])), m[3], m[4]);
+  }
   getLastRow() {
     let last = 0;
     for (const [k, x] of this.cells) if (x.v !== undefined && x.v !== '') last = Math.max(last, Number(k.split(',')[0]));
@@ -171,6 +180,7 @@ class MockSpreadsheet {
   insertSheet(name, index) {
     if (this.getSheetByName(name)) throw new Error('A sheet with the name "' + name + '" already exists.');
     const sh = new MockSheet(name, Math.max(0, ...this.sheets.map((s) => s.id)) + 1);
+    sh.ss = this;
     this.sheets.splice(index === undefined ? this.sheets.length : index, 0, sh);
     return sh;
   }
@@ -198,24 +208,71 @@ const DICT = {
   }
 };
 
+function fakeWord(l, to) {
+  return (DICT[to] && DICT[to][l]) || (to === 'en' ? 'EN:' + l : '中:' + l);
+}
+
 function fakeLanguageApp() {
   const app = {
     calls: [],
-    fail: false,
-    mergeLines: false, // simulasi penerjemah yang menggabung baris
-    translate(text, from, to) {
-      app.calls.push({ text, from, to });
+    fail: false,       // kuota harian habis
+    failRate: 0,       // n panggilan berikutnya kena batas per menit
+    mergeLines: false, // mode teks menggabung baris (mode HTML tetap rapi)
+    translate(text, from, to, args) {
+      app.calls.push({ text, from, to, html: !!(args && args.contentType === 'html') });
       if (app.fail) throw new Error('Service invoked too many times for one day: translate.');
-      const out = String(text).split('\n').map((l) => (DICT[to] && DICT[to][l]) || (to === 'en' ? 'EN:' + l : '中:' + l));
+      if (app.failRate > 0) { app.failRate--; throw new Error('Service invoked too many times in a short time: translate. Try Utilities.sleep(1000) between calls.'); }
+      if (args && args.contentType === 'html') {
+        return String(text).replace(/<p>([\s\S]*?)<\/p>/g, (m, inner) => {
+          const plainText = inner.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+          return '<p>' + fakeWord(plainText, to).replace(/&/g, '&amp;').replace(/</g, '&lt;') + '</p>';
+        });
+      }
+      const out = String(text).split('\n').map((l) => fakeWord(l, to));
       return app.mergeLines && out.length > 1 ? out.join(' ') : out.join('\n');
     }
   };
   return app;
 }
 
+function fakeCache() {
+  const store = new Map();
+  return {
+    store,
+    getAll(keys) { const o = {}; keys.forEach((k) => { if (store.has(k)) o[k] = store.get(k); }); return o; },
+    putAll(vals) { Object.keys(vals).forEach((k) => store.set(k, vals[k])); }
+  };
+}
+
+function fakeProps() {
+  const p = new Map();
+  return { getProperty: (k) => (p.has(k) ? p.get(k) : null), setProperty(k, v) { p.set(k, String(v)); return this; } };
+}
+
 function services(ss) {
+  const cache = fakeCache();
+  const props = fakeProps();
+  const sleeps = [];
+  // Rumus GOOGLETRANSLATE: kuota terpisah dari LanguageApp.
+  ss.formulaCalls = [];
+  ss.formulaFail = false;
+  ss.formulaTranslate = (text, from, to) => {
+    ss.formulaCalls.push({ text, from, to });
+    return ss.formulaFail ? '#VALUE!' : fakeWord(text, to);
+  };
+  ss.sheets.forEach((sh) => { sh.ss = ss; });
   return {
     LanguageApp: fakeLanguageApp(),
+    CacheService: { getScriptCache: () => cache, cache },
+    PropertiesService: { getScriptProperties: () => props },
+    Utilities: {
+      sleeps,
+      sleep(ms) { sleeps.push(ms); },
+      DigestAlgorithm: { MD5: 'md5' },
+      Charset: { UTF_8: 'utf8' },
+      computeDigest(alg, text) { return Array.from(crypto.createHash('md5').update(String(text), 'utf8').digest()); },
+      base64Encode(bytes) { return Buffer.from(bytes.map((b) => b & 255)).toString('base64'); }
+    },
     SpreadsheetApp: {
       getActiveSpreadsheet: () => ss,
       getActiveRange: () => ss.activeRange || null,

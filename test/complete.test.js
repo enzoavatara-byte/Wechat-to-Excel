@@ -110,9 +110,10 @@ test('pengaman: baris berubah sejak daftar dimuat -> tidak menulis apa pun', () 
 });
 
 test('pengaman: terjemahan gagal -> tidak ada yang ditulis', () => {
-  const { gas, geely, tr } = setup();
+  const { gas, geely, tr, ss } = setup();
   const r = find(plain(gas.listIncomplete()), 'Geely list (2)', 18);
   tr.fail = true;
+  ss.formulaFail = true; // cadangan rumus juga gagal
   assert.throws(() => gas.saveCompletion({ sheet: r.sheet, row: r.row, expect: expectOf(r), rootCause: 'baut longgar', solution: 'ganti' }), /Terjemahan gagal, belum ada yang ditulis/);
   assert.equal(geely.get('E18'), undefined);
   assert.equal(geely.get('F18'), undefined);

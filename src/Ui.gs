@@ -38,6 +38,7 @@ function setup() {
   }
 
   if (TRANSLATE) {
+    ok('Panggilan Google Translate hari ini: ' + translateCallsToday_() + ' (kuota akun Gmail ±5.000/hari; diulang dari cache tidak dihitung)');
     try {
       var en = translateTexts_(['mesin macet'], 'id', 'en');
       ok('Terjemahan aktif: "mesin macet" → "' + fixZh_(translateTexts_(en, 'en', 'zh-CN')[0]) + '" (' + en[0] + ')');
