@@ -78,8 +78,19 @@ PASTE teks WeChat → PERIKSA (centang, pilih Discipline, cek terjemahan) → IM
 
 ## 3. Cara pakai
 
-1. Di WeChat, copy laporan. Boleh beberapa sekaligus; teks obrolan lain di sela-selanya diabaikan.
-2. Spreadsheet → **WeChat Import → Import laporan WeChat…** (atau buka URL web app).
+Web app dibuka di halaman **Ringkasan** (tema gelap): heatmap issue per hari (20 minggu, ‹ › untuk geser,
+klik kotak = filter tanggal), 4 kartu angka (bulan ini, total, rata-rata downtime, kelengkapan), lalu **Riwayat**
+per bulan. Titik merah = baris yang belum lengkap: klik → langsung ke kartunya di Lengkapi. Baris lengkap → buka di sheet.
+Tombol ✎ kiri atas = Impor, tombol kanan atas (angka merah) = Lengkapi.
+
+1. Di WeChat, copy laporan **beserta nama pengirim & jam kirimnya**, mis.
+   ```
+   Raihan Farhan
+   2026/11/09  9:05
+   ①Tingkat saat ini: L1 …
+   ```
+   Nama itu dicatat sebagai **pelapor** (di Notes K). Boleh beberapa laporan sekaligus; obrolan lain diabaikan.
+2. Spreadsheet → **WeChat Import → Import laporan WeChat…** (atau buka URL web app → ✎).
 3. Paste → **Proses laporan** (Ctrl+Enter).
 4. **Periksa** setiap kartu:
    - Centang = akan ditulis. **Change over default tidak dicentang** (lihat bagian 6).
@@ -88,19 +99,34 @@ PASTE teks WeChat → PERIKSA (centang, pilih Discipline, cek terjemahan) → IM
    - Machine, Deskripsi, dan Notes tampil persis seperti yang akan ditulis (中文 lalu (English)), plus teks aslinya.
      Baca baris English-nya: kalau artinya melenceng, terjemahan Mandarinnya juga melenceng.
    - Peringatan menunjukkan field yang gagal terbaca + kolom yang terdampak.
+   - **PIC (I)**: klik nama untuk memilih/batal, berapa pun jumlahnya. Daftar nama diambil dari kolom I semua sheet
+     issue (paling sering dipakai dulu) + nama di teks yang di-paste; nama baru: ketik di *+ Nama lain* lalu Enter.
+   - **Pelapor**: dari header chat. Kalau tidak terbaca (teks di-copy tanpa nama pengirim), pilih dari daftar nama.
    - **✎ Edit isi sel**: semua sel C–K laporan itu bisa diubah sebelum ditulis.
      - C, D, E, F, K: teks berhuruf Mandarin ditulis apa adanya (mis. terjemahan yang Anda perbaiki). Teks tanpa huruf
        Mandarin dianggap Bahasa Indonesia dan diterjemahkan saat impor; klik **↻ Terjemahkan** untuk melihat hasilnya
        sebelum impor. Untuk C, ketik `Proyek - Proses` (mis. `E245 - Press Modul`) supaya hasilnya `E245模组压装` / `(E245 Module Press)`.
      - E/F boleh langsung diisi kalau jawabannya sudah ada (diterjemahkan, teks asli ke catatan sel).
-     - G (jam, `20:30`), I (PIC), J (tanggal, `2026/10/20`). Format jam/tanggal dicek; selama ada yang tidak valid,
+     - G (jam, `20:30`), J (tanggal, `2026/10/20`), PIC & pelapor lewat pemilih nama. Format jam/tanggal dicek; selama ada yang tidak valid,
        tombol Impor terkunci. H tetap lewat dropdown.
      - Catatan sel C/D tetap teks asli laporan (dipakai juga untuk deteksi duplikat). *Batalkan perubahan* mengembalikan hasil parser.
 5. **Impor N laporan.**
-6. Halaman **Selesai**: link langsung ke tiap baris, dan **Pertanyaan untuk mentor** (tombol *Salin*): per laporan
-   yang masih ada kolom kosong, berisi pertanyaannya (Root cause? Solusi? …) plus detail yang bisa dipilih:
-   **waktu & durasi**, **PIC**, **jenis & status**, **sheet & baris**. Teksnya bisa diedit langsung sebelum disalin.
-7. Setelah dapat jawaban mentor: tab **Lengkapi** di web app (bagian 3c). Ketik dalam Bahasa Indonesia →
+6. Halaman **Selesai**: link langsung ke tiap baris, dan **Teks chat untuk teknisi** (tombol *Salin*), ringkas
+   supaya mau dibaca:
+   ```
+   🔧 Mohon dilengkapi (1 laporan)
+   Isi baris ✏️ lalu kirim balik ya 🙏
+
+   1) DJ2518 - VFLimo7 - cell online Line B
+   ❗ conveyor cell online line B stuck
+   ⏱ 9 Nov · 7:30 → 9:05 (95 menit)
+   👷 PIC: 牧師 imam, Iqbal
+   📝 Pelapor: Raihan Farhan
+   ✏️ Root cause:
+   ✏️ Solusi:
+   ```
+   Baris ✏️ hanya untuk yang benar-benar kosong (Root cause, Solusi, Kategori/Discipline, PIC, jam selesai).
+7. Setelah dapat jawaban: **Lengkapi** di web app (bagian 3c). Ketik dalam Bahasa Indonesia →
    **Simpan & terjemahkan**. Tidak perlu membuka sheet atau memakai menu.
    Alternatif kalau mengetik langsung di sheet: pilih sel-selnya lalu
    **WeChat Import → Terjemahkan sel terpilih (中文 + English)**. Teks asli disimpan di catatan sel.
@@ -108,10 +134,14 @@ PASTE teks WeChat → PERIKSA (centang, pilih Discipline, cek terjemahan) → IM
    angka, header, dan sel ber-dropdown selalu dilewati, jadi aman walau Anda memilih satu baris penuh.
 
 ### 3c. Lengkapi dari web app (tanpa menu)
-Tab **Lengkapi** di kepala halaman (angka = jumlah baris yang belum lengkap), tombol
+Tombol kanan atas (angka = jumlah baris yang belum lengkap), kartu *Kelengkapan* / titik merah di Ringkasan, tombol
 **Lengkapi Root Cause / Solution →** di halaman Selesai, atau menu **WeChat Import → Lengkapi Root Cause / Solution…**.
 - Menampilkan semua baris (C atau D terisi) di semua sheet issue yang **E, F, atau H masih kosong**, atau E/F berisi
-  teks Bahasa Indonesia yang belum diterjemahkan. Terbaru dulu; bisa difilter per sheet.
+  teks Bahasa Indonesia yang belum diterjemahkan. Terbaru dulu; bisa difilter per sheet dan per tanggal.
+- Tiap kartu menampilkan mulai, selesai, downtime, lini, **pelapor**, status, dan masalahnya; PIC (I) bisa
+  diubah lewat pemilih nama (ikut disimpan, tidak diterjemahkan).
+- **💬 Teks chat**: teks seperti di halaman Selesai untuk semua kartu di filter saat ini (pilih tanggal = satu shift);
+  **💬 Chat** di kartu = satu laporan saja.
 - Tiap kartu: Machine & Deskripsi (dengan teks asli), kolom isian Root Cause (E) dan Solution (F), dan pilihan
   Discipline (H) kalau masih kosong. **Simpan & terjemahkan** (atau Ctrl+Enter): teks Indonesia langsung jadi
   `中文\n(English)` di sheet, teks asli di catatan sel. Boleh isi E dulu, F menyusul.
@@ -178,15 +208,16 @@ Yang **tidak** bisa sama persis:
 | **D** Issue Description | ⑤ → `中文` / `(English)` (multi-baris dipertahankan) |
 | **E** Root Cause, **F** Solution | **Selalu kosong**, tanpa warna. Diisi manual, lalu bisa diterjemahkan lewat menu |
 | **G** End Time | Jam dari ⑧, format `h:mm` |
-| **H** Discipline | ⑥-1 lewat `DISCIPLINE_MAP` (huruf besar/kecil, spasi, strip diabaikan). Tidak terpetakan → kosong + peringatan |
-| **I** Responsibility | ⑥-2 tanpa `@`, digabung `", "` |
+| **H** Discipline | ⑥-1 lewat `DISCIPLINE_MAP` (huruf besar/kecil, spasi, strip diabaikan; `Mesin`, `Masalah Mesin` → Machine). Tidak terpetakan → kosong + peringatan |
+| **I** Responsibility | ⑥-2 tanpa `@`, digabung `", "`. Bisa ditambah/dikurangi lewat pemilih nama |
 | **J** Date | Tanggal dari ④, format `yyyy/mm/dd` |
-| **K** Notes | Level ①, jam mulai ④, durasi, jenis ⑥-1, ⑦-1, ⑦-2 dalam `中文` / `(English)`. Peringatan ada di catatan sel K |
+| **K** Notes | **Ringkas**: jam mulai ④, downtime, pelapor. Hanya kalau penting: level selain L1, jenis ⑥-1 yang tidak masuk H, status ⑦ yang belum pulih/selesai, selesai beda hari. Semua field asli + peringatan ada di catatan sel K |
 
 **Tidak ada sel yang diwarnai.** Baris yang ditulis tool latarnya dikembalikan polos (sisa kuning dari versi lama
 ikut hilang). Kolom yang masih harus dilengkapi tampil di layar Periksa, layar Selesai, dan teks pertanyaan mentor.
 
-- **Sheet tujuan:** proyek di `PROJECT_SHEET` (E245 → `Geely list (2)`); proyek lain → sheet yang dipilih di UI.
+- **Sheet tujuan:** proyek di `PROJECT_SHEET` (E245 → `Geely list (2)`) atau kode dari *Buat sheet baru*; proyek lain →
+  sheet yang dipilih di UI. ② `DJ2518 - VFLimo7` cocok dengan kode `DJ2518VFLimo7`, `DJ2518`, **atau** `VFLimo7`.
 - **Baris tujuan:** baris pertama mulai baris 9 yang **C dan D-nya kosong**. Kalau sheet kehabisan baris, baris
   ditambah otomatis; baris di bawah tabel template (setelah baris 35) menyalin format & dropdown H dari baris di atasnya.
 - **Jumlah data:** tidak dibatasi tool. Paste besar ditulis bertahap (15 laporan per proses Apps Script).
@@ -197,13 +228,19 @@ ikut hilang). Kolom yang masih harus dilengkapi tampil di layar Periksa, layar S
 
 Contoh Notes (K) dan catatan selnya:
 ```
-等级：L1；开始：18:05；影响时长：18分钟；类型：换型；产线状态：设备已恢复；处理状态：处理完成
-(Level: L1; Start: 18:05; Downtime: 18 min; Type: Changeover; Line status: Machine recovered; Handling: Handling completed)
+开始：7:30；影响时长：95分钟；报告人：Raihan Farhan
+(Start: 7:30; Downtime: 95 min; Reporter: Raihan Farhan)
 
 [catatan sel K]
-Asli (ID): Level: L1 | Jenis: Change over | Lini: Mesin pulih | Penanganan: Selesai penanganan
-⚠ ⑥-1 jenis "Change over" belum dipetakan ke Discipline
+Asli (ID): Level: L1 | Jenis: Masalah Mesin | Lini: Machine pulih | Penanganan: selesai di tangani | Pelapor: Raihan Farhan
 ```
+`开始` *kāishǐ* = mulai, `影响时长` *yǐngxiǎng shícháng* = lama dampak (downtime), `报告人` *bàogào rén* = pelapor.
+Change over yang tetap diimpor: `开始：18:05；影响时长：18分钟；类型：换型` (`类型` *lèixíng* = jenis, `换型` *huànxíng* = changeover)
+karena H-nya kosong. Status "Mesin pulih" / "Selesai penanganan" tidak ditulis di K (normal); "belum selesai" ditulis.
+
+**Pelapor** hanya dibaca dari pola header chat WeChat: baris nama tepat di atas baris jam kirim
+(`2026/11/09 9:05` atau `9:05`), tepat sebelum laporan; atau satu baris `Nama 2026/11/09 9:05`. Selain itu kosong
+(tidak ditebak), dan bisa dipilih di layar Periksa.
 
 ### Ketahanan parser
 Parsing dikunci pada **simbol** ①–⑨ dan ⑥-1/⑥-2, ⑦-1/⑦-2, bukan teks labelnya. Tahan terhadap:
@@ -313,6 +350,10 @@ npm run build   # buat ulang dist/ setelah mengubah src/
 - `test/complete.test.js`: tab *Lengkapi* (daftar & urutan termasuk tanggal angka lama, simpan + terjemah E/F
   sekaligus, isi bertahap, teks Mandarin apa adanya, tidak menimpa isi Mandarin, baris berubah, terjemahan gagal,
   Discipline di luar dropdown).
+- `test/reporter.test.js`: contoh chat asli `test/fixtures/limo7.txt` (pelapor dari header, beberapa pesan
+  berurutan, tidak menebak tanpa header, K ringkas + pelapor, rute `DJ2518 - VFLimo7`, pelapor dipilih manual,
+  terbaca lagi di Lengkapi/Ringkasan).
+- `test/dashboard.test.js`: data halaman Ringkasan.
 - `test/edit.test.js`: *✎ Edit isi sel* (teks Mandarin apa adanya, teks Indonesia diterjemahkan termasuk format C,
   E/F saat impor, validasi G/J, C & D kosong ditolak, terjemahan gagal → tidak menulis, tombol ↻).
 - `test/capacity.test.js`: data banyak (sheet kehabisan baris, tabel template penuh, paste 120 laporan).

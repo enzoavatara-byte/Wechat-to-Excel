@@ -4,6 +4,7 @@
 
   var state = {
     init: null,
+    view: '',
     preview: null,   // hasil previewWeChat
     text: '',        // teks yang dipratinjau = teks yang akan diimpor
     other: '',
@@ -11,25 +12,43 @@
     disc: {},        // id -> Discipline pilihan
     translate: true, // false setelah memilih "Lanjut tanpa terjemahan"
     newSheetFrom: '', // 'menu' (dialog sendiri) atau 'paste' (dari tautan "+ Sheet baru")
-    importView: 'paste', // langkah impor terakhir, dipulihkan saat kembali ke tab Impor
+    importView: 'paste', // langkah impor terakhir, dipulihkan saat kembali ke Impor
     edits: {},       // id -> { KEY_KOLOM: isi sel yang diubah manual } (lihat Edit.gs)
     editing: {},     // id -> kartu sedang dalam mode edit?
-    written: [],     // hasil impor terakhir (untuk menyusun ulang teks mentor)
-    mentorOpts: { time: true, pic: true, status: true, where: false },
-    cmp: null        // hasil listIncomplete + filter sheet
+    reporter: {},    // id -> pelapor yang dipilih manual (menimpa nama dari header chat)
+    written: [],     // hasil impor terakhir (untuk teks chat)
+    extraNames: { pic: [], rep: [] }, // nama baru yang diketik di sesi ini
+    cmp: null,       // hasil listIncomplete + filter
+    cmpPic: {},      // "sheet|baris" -> PIC yang dipilih di Lengkapi (belum disimpan)
+    dash: null,      // hasil getDashboard + posisi heatmap/filter
+    dashStale: false
   };
 
-  // Pertanyaan untuk mentor per kolom kosong (Root Cause & Solution selalu ditanyakan).
-  var QUESTIONS = {
-    ROOT_CAUSE: 'Root cause?',
-    SOLUTION: 'Solusi?',
-    MACHINE: 'Proyek / proses (Machine)?',
-    DESC: 'Deskripsi masalah?',
-    END_TIME: 'Jam selesai?',
-    DISCIPLINE: 'Discipline (Machine / Operation / Product Item / MES)?',
-    PIC: 'PIC / Responsibility?',
-    DATE: 'Tanggal kejadian?'
+  var ICON = {
+    pencil: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>',
+    back: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>',
+    check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>',
+    cal: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>',
+    stack: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>',
+    clock: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>',
+    target: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>'
   };
+
+  // Baris yang harus diisi teknisi di teks chat, per kolom kosong.
+  var ASK = {
+    ROOT_CAUSE: 'Root cause',
+    SOLUTION: 'Solusi',
+    DISCIPLINE: 'Kategori (Machine / Operation / Product Item / MES)',
+    PIC: 'PIC',
+    END_TIME: 'Jam selesai',
+    DATE: 'Tanggal',
+    MACHINE: 'Mesin / line',
+    DESC: 'Masalah'
+  };
+
+  var MONTHS = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+  var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+  var DAY = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'];
 
   // ---------- util ----------
   function $(id) { return document.getElementById(id); }
@@ -64,32 +83,124 @@
     return list.map(function (y) { return '<span class="col-chip">' + esc(y.col) + '</span>'; }).join('');
   }
   function selectable(r) { return r.writable && !r.sheetError; }
-  function hasChinese(s) { return /[\u4e00-\u9fff]/.test(String(s || '')); }
+  function hasChinese(s) { return /[一-鿿]/.test(String(s || '')); }
+  function isEmptyStr(s) { return !String(s || '').trim(); }
+  function each(sel, fn) { Array.prototype.forEach.call(document.querySelectorAll(sel), fn); }
+  function swap(el, html) {
+    if (!el) return null;
+    var t = document.createElement('div');
+    t.innerHTML = html;
+    var node = t.firstChild;
+    el.parentNode.replaceChild(node, el);
+    return node;
+  }
+  function pad(n) { return (n < 10 ? '0' : '') + n; }
+  function ymd(d) { return d.getFullYear() + '/' + pad(d.getMonth() + 1) + '/' + pad(d.getDate()); }
+  function parseYmd(s) {
+    var m = /^(\d{4})[\/.\-](\d{1,2})[\/.\-](\d{1,2})/.exec(String(s || '').trim());
+    if (!m) return null;
+    var d = new Date(+m[1], +m[2] - 1, +m[3]);
+    return d.getMonth() === +m[2] - 1 ? d : null;
+  }
+  function addDays(d, n) { return new Date(d.getFullYear(), d.getMonth(), d.getDate() + n); }
+  function dayMonth(d) { return d.getDate() + ' ' + MON[d.getMonth()]; }
+  function minutesOf(s) { var m = /^(\d{1,2}):(\d{2})$/.exec(String(s || '').trim()); return m ? +m[1] * 60 + +m[2] : null; }
+  function minutesBetween(a, b) {
+    var x = minutesOf(a), y = minutesOf(b);
+    return x !== null && y !== null && y >= x ? y - x : null;
+  }
+  function oneLine(s) { return String(s || '').replace(/\s*\n\s*/g, ' · ').trim(); }
+  /** "中文\n(English)" -> "English"; teks biasa apa adanya (untuk chat & daftar). */
+  function plainText(v) {
+    v = String(v || '');
+    var i = v.indexOf('\n(');
+    return i !== -1 && /\)\s*$/.test(v) ? v.slice(i + 2).replace(/\)\s*$/, '') : v;
+  }
+  /** "a, b; c" -> ['a', 'b', 'c'] tanpa duplikat (huruf besar/kecil diabaikan). Sama dengan splitPics_. */
+  function splitNames(s) {
+    var seen = {};
+    return String(s || '').split(/\s*[,;、\n]\s*/).map(function (n) { return n.replace(/\s+/g, ' ').trim(); })
+      .filter(function (n) {
+        var k = n.toLowerCase();
+        if (!n || /^[\s\-–—\/.?]*$/.test(n) || seen[k]) return false;
+        seen[k] = true;
+        return true;
+      });
+  }
+  /** Sama dengan withReporter_ (Parser.gs): pelapor di akhir K, di kedua baris kalau K dua bahasa. */
+  function withReporter(k, name) {
+    name = String(name || '').trim();
+    k = String(k || '');
+    if (!name) return k;
+    var i = k.lastIndexOf('\n(');
+    if (i !== -1 && k.charAt(k.length - 1) === ')') {
+      return k.slice(0, i) + '；报告人：' + name + '\n(' + k.slice(i + 2, -1) + '; Reporter: ' + name + ')';
+    }
+    return k + (k ? ' | ' : '') + 'Pelapor: ' + name;
+  }
+  function setBadge(n) { $('cmp-badge').textContent = n ? n : ''; }
+
+  // ---------- navigasi ----------
+  var VIEWS = ['dash', 'paste', 'preview', 'result', 'newsheet', 'complete'];
+  var IMPORT_VIEWS = ['paste', 'preview', 'result'];
 
   function show(view) {
-    var order = ['paste', 'preview', 'result'];
-    order.concat('newsheet', 'complete').forEach(function (v) { $('view-' + v).classList.toggle('hidden', v !== view); });
+    state.view = view;
+    VIEWS.forEach(function (v) { $('view-' + v).classList.toggle('hidden', v !== view); });
     $('actionbar').classList.toggle('hidden', view !== 'preview');
-    $('steps').classList.toggle('hidden', order.indexOf(view) === -1);
-    $('modes').classList.toggle('hidden', view === 'newsheet');
-    if (order.indexOf(view) !== -1) state.importView = view;
-    Array.prototype.forEach.call(document.querySelectorAll('#modes button'), function (b) {
-      b.classList.toggle('on', (b.getAttribute('data-mode') === 'complete') === (view === 'complete'));
-    });
-    var idx = order.indexOf(view);
-    Array.prototype.forEach.call(document.querySelectorAll('#steps li'), function (li) {
-      var i = order.indexOf(li.getAttribute('data-step'));
+    var idx = IMPORT_VIEWS.indexOf(view);
+    $('steps').classList.toggle('hidden', idx === -1);
+    if (idx !== -1) state.importView = view;
+    each('#steps li', function (li) {
+      var i = IMPORT_VIEWS.indexOf(li.getAttribute('data-step'));
       li.className = i === idx ? 'on' : (i < idx ? 'done' : '');
     });
+    setHeader(view);
     window.scrollTo(0, 0);
   }
 
-  // ---------- 1. Paste ----------
+  /** Tombol bulat kiri/kanan: kiri = Impor (di Ringkasan) atau kembali; kanan = Lengkapi (+ jumlah) atau Impor. */
+  function setHeader(view) {
+    $('view-title').textContent = { dash: 'WeChat Import', complete: 'Lengkapi', newsheet: 'Sheet baru' }[view] || 'Impor laporan';
+    var L = $('hbtn-left'), R = $('hbtn-right');
+    if (view === 'dash') headBtn(L, 'pencil', 'Impor laporan WeChat', 'import');
+    else if (view === 'newsheet') headBtn(L, 'back', 'Kembali ke impor', 'paste');
+    else headBtn(L, 'back', 'Ringkasan', 'dash');
+    if (view === 'complete') headBtn(R, 'pencil', 'Impor laporan WeChat', 'import');
+    else headBtn(R, 'check', 'Lengkapi Root Cause / Solution', 'complete');
+    R.classList.toggle('no-count', view === 'complete');
+    var fromMenu = view === 'newsheet' && state.newSheetFrom === 'menu';
+    L.style.visibility = fromMenu ? 'hidden' : '';
+    R.style.visibility = view === 'newsheet' ? 'hidden' : '';
+  }
+  function headBtn(b, icon, label, go) {
+    b.setAttribute('data-go', go);
+    b.setAttribute('aria-label', label);
+    b.title = label;
+    b.querySelector('.ico').innerHTML = ICON[icon];
+  }
+
+  function go(where) {
+    if (where === 'dash') openDash();
+    else if (where === 'complete') openComplete();
+    else if (where === 'paste') closeNewSheet();
+    else if (where === 'import') {
+      flash('');
+      show(state.importView);
+      if (state.importView === 'paste') $('src').focus();
+    }
+  }
+
   function boot() {
-    if (APP_MODE === 'newsheet') openNewSheet('menu');
+    if (APP_MODE === 'newsheet') {
+      openNewSheet('menu');
+      loadInit().catch(function (e) { flash('Gagal memuat: ' + cleanErr(e)); });
+      return;
+    }
     loadInit().catch(function (e) { flash('Gagal memuat: ' + cleanErr(e)); });
     if (APP_MODE === 'complete') openComplete();
-    else if (APP_MODE !== 'newsheet') loadComplete(); // hanya untuk angka di tab "Lengkapi"
+    else if (APP_MODE === 'dialog') { show('paste'); loadDashboard(); }
+    else openDash();
   }
 
   /** Muat daftar sheet & rute proyek; `prefer` = sheet yang dipilih di "Sheet untuk proyek lain". */
@@ -113,11 +224,169 @@
       $('btn-preview').disabled = !d.sheets.length;
       if (!d.sheets.length && APP_MODE !== 'newsheet') {
         flash('Belum ada sheet issue (header baris ' + d.headerRow + ': No.序号 | Machine | Issue Description). ' +
-          'Klik “+ Sheet baru” untuk membuat sheet dengan format manajer.', 'warn');
+          'Klik “+ Sheet baru” (menu Impor) untuk membuat sheet dengan format manajer.', 'warn');
       }
     });
   }
 
+  // ---------- Ringkasan (beranda) ----------
+  var HEAT_WEEKS = 20;
+  var DASH_PAGE = 40;
+
+  function openDash() {
+    flash('');
+    show('dash');
+    if (!state.dash || state.dashStale) loadDashboard();
+  }
+
+  function loadDashboard() {
+    state.dashStale = false;
+    return call('getDashboard').then(function (d) {
+      var prev = state.dash || {};
+      var byDay = {};
+      d.rows.forEach(function (r) {
+        var dt = parseYmd(r.date);
+        r.day = dt ? ymd(dt) : '';
+        if (r.day) byDay[r.day] = (byDay[r.day] || 0) + 1;
+      });
+      state.dash = { rows: d.rows, url: d.url, byDay: byDay, offset: prev.offset || 0, day: prev.day || '',
+        mode: prev.mode || 'all', limit: DASH_PAGE };
+      setBadge(d.rows.filter(function (r) { return r.need.length; }).length);
+      renderDash();
+    }).catch(function (e) {
+      if (!state.dash) $('records').innerHTML = '';
+      if (state.view === 'dash') flash('Gagal memuat ringkasan: ' + cleanErr(e));
+    });
+  }
+
+  function renderDash() {
+    renderHeat();
+    renderStats();
+    renderRecords();
+  }
+
+  function heatWindow() {
+    var now = new Date();
+    var today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    var monday = addDays(today, -((today.getDay() + 6) % 7));
+    var start = addDays(monday, -7 * (HEAT_WEEKS - 1 + state.dash.offset * HEAT_WEEKS));
+    return { today: today, start: start, end: addDays(start, 7 * HEAT_WEEKS - 1) };
+  }
+
+  /** 20 minggu (kolom) × Senin–Minggu (baris); warna = jumlah issue per hari (1, 2, 3, 4+). */
+  function renderHeat() {
+    var d = state.dash, w = heatWindow(), tk = ymd(w.today), cells = [];
+    for (var i = 0; i < 7 * HEAT_WEEKS; i++) {
+      var day = addDays(w.start, i), k = ymd(day), n = d.byDay[k] || 0;
+      var label = DAY[day.getDay()] + ', ' + dayMonth(day) + ' ' + day.getFullYear() + ': ' + (n ? n + ' issue' : 'tidak ada issue');
+      var cls = 'heat-cell' + (day > w.today ? ' future' : (n ? ' l' + Math.min(n, 4) : '')) +
+        (k === tk ? ' today' : '') + (k === d.day ? ' sel' : '');
+      cells.push(n
+        ? '<button type="button" class="' + cls + '" data-day="' + k + '" title="' + esc(label) + '" aria-label="' + esc(label) + '"></button>'
+        : '<span class="' + cls + '" title="' + esc(label) + '"></span>');
+    }
+    $('heat-grid').innerHTML = cells.join('');
+    var sy = w.start.getFullYear(), ey = w.end.getFullYear();
+    $('heat-range').textContent = dayMonth(w.start) + (sy !== ey ? ' ' + sy : '') + ' – ' + dayMonth(w.end) + ' ' + ey;
+    $('heat-next').disabled = d.offset === 0;
+    var first = Object.keys(d.byDay).sort()[0];
+    $('heat-prev').disabled = !first || first >= ymd(w.start);
+  }
+
+  function statCard(icon, title, num, foot, opts) {
+    opts = opts || {};
+    return '<div class="stat-card' + (opts.go ? ' go' : '') + '"' + (opts.go ? ' role="button" tabindex="0" data-go="' + opts.go + '"' : '') + '>' +
+      '<div class="stat-title">' + icon + esc(title) + '</div>' +
+      '<div class="stat-num' + (opts.dim ? ' dim' : '') + '">' + num + '</div>' + (opts.extra || '') +
+      '<div class="stat-foot">' + foot + '</div></div>';
+  }
+
+  function renderStats() {
+    var d = state.dash, rows = d.rows, tk = ymd(heatWindow().today), month = tk.slice(0, 7);
+    var nMonth = rows.filter(function (r) { return r.day.slice(0, 7) === month; }).length;
+    var days = Object.keys(d.byDay).sort();
+    var since = days.length ? parseYmd(days[0]) : null;
+    var downs = rows.map(function (r) { return r.downtime; }).filter(function (x) { return typeof x === 'number' && isFinite(x); });
+    var avg = downs.length ? Math.round(downs.reduce(function (a, b) { return a + b; }, 0) / downs.length) : null;
+    var open = rows.filter(function (r) { return r.need.length; }).length;
+    var pct = rows.length ? Math.round((rows.length - open) * 100 / rows.length) : 0;
+    $('stat-grid').innerHTML =
+      statCard(ICON.cal, 'Bulan ini', nMonth, 'Hari ini: <b>' + (d.byDay[tk] || 0) + '</b> issue') +
+      statCard(ICON.stack, 'Total issue', rows.length, since ? 'Sejak <b>' + esc(dayMonth(since) + ' ' + since.getFullYear()) + '</b>' : 'Belum ada data') +
+      statCard(ICON.clock, 'Downtime', avg === null ? '–' : avg + '<small>mnt</small>',
+        downs.length ? 'rata-rata dari <b>' + downs.length + '</b> issue' : 'Belum ada data', { dim: avg === null }) +
+      statCard(ICON.target, 'Kelengkapan', pct + '%', open ? '<b>' + open + '</b> perlu dilengkapi →' : 'Semua lengkap ✓',
+        { extra: '<div class="progress"><span style="width:' + pct + '%"></span></div>', go: open ? 'complete' : '' });
+  }
+
+  function dashList() {
+    var d = state.dash;
+    return d.rows.filter(function (r) {
+      return (!d.day || r.day === d.day) && (d.mode !== 'open' || r.need.length);
+    }).sort(function (a, b) {
+      if (a.day !== b.day) return !a.day ? 1 : (!b.day ? -1 : (a.day < b.day ? 1 : -1));
+      var ta = minutesOf(a.start), tb = minutesOf(b.start);
+      if (ta !== tb) return (tb === null ? -1 : tb) - (ta === null ? -1 : ta);
+      return b.row - a.row;
+    });
+  }
+
+  function renderRecords() {
+    var d = state.dash, list = dashList();
+    var open = d.rows.filter(function (r) { return r.need.length; }).length;
+    $('rec-open-n').textContent = open ? '(' + open + ')' : '';
+    each('#rec-mode button', function (b) { b.classList.toggle('on', b.getAttribute('data-mode') === d.mode); });
+    var f = $('rec-filter');
+    if (d.day) {
+      var dt = parseYmd(d.day);
+      f.innerHTML = '<span>' + esc(DAY[dt.getDay()] + ', ' + dayMonth(dt) + ' ' + dt.getFullYear()) + ' · ' + (d.byDay[d.day] || 0) + ' issue</span>' +
+        '<button type="button" class="link" id="rec-clear">× Semua tanggal</button>';
+    }
+    f.classList.toggle('hidden', !d.day);
+    if (!d.rows.length) {
+      $('records').innerHTML = '<div class="card empty-card"><p>Belum ada issue di sheet.</p>' +
+        '<button type="button" class="btn primary" data-go="import">Impor laporan WeChat</button></div>';
+      return;
+    }
+    if (!list.length) {
+      $('records').innerHTML = '<div class="card center muted">' + (d.mode === 'open' ? 'Tidak ada yang perlu dilengkapi ✓' : 'Tidak ada issue.') + '</div>';
+      return;
+    }
+    var counts = {};
+    list.forEach(function (r) { var m = r.day.slice(0, 7); counts[m] = (counts[m] || 0) + 1; });
+    var html = [], cur = null;
+    list.slice(0, d.limit).forEach(function (r) {
+      var m = r.day.slice(0, 7);
+      if (m !== cur) {
+        cur = m;
+        var dt = parseYmd(r.day);
+        html.push('<div class="month"><span>' + esc(dt ? MONTHS[dt.getMonth()] + ' ' + dt.getFullYear() : 'Tanpa tanggal') +
+          '</span><span class="badge">' + counts[m] + '</span></div>');
+      }
+      html.push(recRow(r));
+    });
+    if (list.length > d.limit) {
+      html.push('<button type="button" class="btn ghost sm more" id="rec-more">Tampilkan lebih banyak (' + (list.length - d.limit) + ')</button>');
+    }
+    $('records').innerHTML = html.join('');
+  }
+
+  /** Belum lengkap -> buka di Lengkapi; sudah lengkap -> buka barisnya di sheet. */
+  function recRow(r) {
+    var dt = parseYmd(r.day);
+    var when = dt ? DAY[dt.getDay()] + ', ' + dayMonth(dt) : 'Tanpa tanggal';
+    var sub = [r.process || plainText(r.machine), plainText(r.problem)].filter(Boolean).join(' · ');
+    var inner = '<span class="main"><span class="d">' +
+        (r.need.length ? '<span class="dot" title="Perlu dilengkapi: ' + esc(r.need.join(', ')) + '"></span>' : '') + esc(when) + '</span>' +
+        '<span class="sub">' + esc(oneLine(sub)) + '</span></span>' +
+      '<span class="right"><span class="t">' + esc(r.start || r.end || '–') + '</span>' +
+        (r.downtime !== null && r.downtime !== undefined ? '<span class="dt">' + esc(r.downtime) + ' mnt</span>' : '') + '</span>';
+    return r.need.length
+      ? '<button type="button" class="rrow" data-key="' + esc(r.sheet + '|' + r.row) + '" title="Lengkapi">' + inner + '</button>'
+      : '<a class="rrow" href="' + esc(rowUrl(state.dash.url, r)) + '" target="_blank" rel="noopener" title="Buka di sheet">' + inner + '</a>';
+  }
+
+  // ---------- 1. Paste ----------
   function doPreview() {
     var btn = $('btn-preview');
     if (btn.disabled) return;
@@ -143,6 +412,7 @@
       state.disc = {};
       state.edits = {};
       state.editing = {};
+      state.reporter = {};
       p.records.forEach(function (r) { state.sel[r.id] = r.include; state.disc[r.id] = r.discipline; });
       renderPreview();
       show('preview');
@@ -188,24 +458,29 @@
     updateCounts();
   }
 
+  function recById(id) { return state.preview.records.filter(function (x) { return x.id === id; })[0]; }
+
   function dupText(d) {
     return d.where === 'sheet' ? 'sudah ada: ' + d.sheet + ' baris ' + d.row : 'duplikat di teks ini';
   }
 
-  function card(r) {
-    var on = !!state.sel[r.id], can = selectable(r);
+  function cardTags(r) {
     var tags = [];
     if (r.type) tags.push('<span class="tag ' + (r.skip ? '' : (r.discipline ? 'blue' : 'amber')) + '">' + esc(r.type) + '</span>');
     if (r.skip) tags.push('<span class="tag">default tidak diimpor</span>');
     if (r.duplicateOf) tags.push('<span class="tag amber">' + esc(dupText(r.duplicateOf)) + '</span>');
     if (r.sheetError) tags.push('<span class="tag red">' + esc(r.sheetError) + '</span>');
     else if (!r.writable) tags.push('<span class="tag red">tidak bisa ditulis</span>');
-    var nEdit = Object.keys(changed(r)).length;
-    if (nEdit) tags.push('<span class="tag blue">✎ ' + nEdit + ' sel diedit</span>');
+    var nEdit = Object.keys(changed(r)).length + (reporterChanged(r) ? 1 : 0);
+    if (nEdit) tags.push('<span class="tag blue">✎ ' + nEdit + ' diubah</span>');
     tags.push('<span class="tag outline">→ ' + esc(r.sheet) + '</span>');
+    return tags.join('');
+  }
+
+  function card(r) {
+    var on = !!state.sel[r.id], can = selectable(r);
     var editing = !!state.editing[r.id];
     var date = val(r, 'DATE'), end = val(r, 'END_TIME');
-
     var meta = [
       date ? esc(date) : empty('tanggal ?'),
       r.endDate ? 'selesai ' + esc(r.endDate) : '',
@@ -218,20 +493,21 @@
         '<div class="when"><div class="time">' + (r.start ? esc(r.start) : empty('?')) +
           '<span class="arrow">→</span>' + (end ? esc(end) : empty('?')) + '</div>' +
           '<div class="meta">' + meta + '</div></div>' +
-        '<div class="tags">' + tags.join('') + '</div>' +
+        '<div class="tags">' + cardTags(r) + '</div>' +
       '</label>';
 
-    var e1 = val(r, 'ROOT_CAUSE'), f1 = val(r, 'SOLUTION'), k1 = val(r, 'NOTES');
+    var e1 = val(r, 'ROOT_CAUSE'), f1 = val(r, 'SOLUTION');
     var body = editing ? editForm(r, can) :
       '<div class="rec-body">' +
         previewStrip(r) +
         problemBox(r.description, val(r, 'DESC'), 'Masalah (D)') +
         biField('Machine (C)', val(r, 'MACHINE'), r.translated && r.machine) +
         '<div class="field"><div class="k">Discipline (H)</div><div class="v">' + disciplineSelect(r, can) + '</div></div>' +
+        picker('pic', splitNames(val(r, 'PIC')), !can) +
+        (!r.reporter ? picker('rep', repList(r), !can) : '') +
         (e1 ? biField('Root Cause (E)', e1, '', 'wide') : '') +
         (f1 ? biField('Solution (F)', f1, '', 'wide') : '') +
-        field('PIC (I)', val(r, 'PIC')) +
-        (k1 ? biField('Notes (K)', k1, '', 'wide notes-k') : '') +
+        biField('Notes (K)', val(r, 'NOTES'), '', 'wide notes-k') +
       '</div>';
 
     var warns = r.warnings.length
@@ -300,6 +576,7 @@
       ['Selesai', val(r, 'END_TIME')],
       ['Downtime', downtimeText(r), 'accent'],
       ['Lini / proses', r.process],
+      ['Pelapor', reporterOf(r)],
       ['Status lini', r.lineStatus],
       ['Penanganan', r.handling],
       ['Level', r.level]
@@ -324,18 +601,132 @@
         var p = { id: r.id, discipline: state.disc[r.id] };
         var c = changed(r);
         if (Object.keys(c).length) p.cells = c;
+        if (reporterChanged(r)) p.reporter = reporterOf(r);
         return p;
       });
+  }
+
+  // ---------- Pemilih nama (PIC: boleh banyak; pelapor: satu) ----------
+  function reporterOf(r) { return state.reporter.hasOwnProperty(r.id) ? state.reporter[r.id] : (r.reporter || ''); }
+  function reporterChanged(r) { return state.reporter.hasOwnProperty(r.id) && state.reporter[r.id] !== (r.reporter || ''); }
+  function repList(r) { var n = reporterOf(r); return n ? [n] : []; }
+
+  /** Nama pilihan: daftar dari sheet (paling sering dipakai dulu) + nama di teks ini + nama baru sesi ini. */
+  function nameList(kind, selected) {
+    var out = [], seen = {};
+    var add = function (n) {
+      n = String(n || '').replace(/\s+/g, ' ').trim();
+      var k = n.toLowerCase();
+      if (n && !seen[k]) { seen[k] = true; out.push(n); }
+    };
+    var init = state.init || {}, cmp = state.cmp || {};
+    var pics = function () {
+      (init.roster || []).concat(cmp.roster || []).forEach(function (p) { add(p.name); });
+      if (state.preview) state.preview.records.forEach(function (r) { splitNames(r.pic).forEach(add); });
+    };
+    if (kind === 'rep') {
+      (init.reporters || []).forEach(function (p) { add(p.name); });
+      if (state.preview) state.preview.records.forEach(function (r) { add(r.reporter); });
+    }
+    state.extraNames[kind].forEach(add);
+    pics();
+    (selected || []).forEach(add);
+    return out;
+  }
+
+  function picker(kind, selected, disabled) {
+    var on = {};
+    selected.forEach(function (n) { on[n.toLowerCase()] = true; });
+    var chips = nameList(kind, selected).map(function (n) {
+      var sel = !!on[n.toLowerCase()];
+      return '<button type="button" class="pic-chip' + (sel ? ' on' : '') + '" data-name="' + esc(n) + '" aria-pressed="' + sel + '"' +
+        (disabled ? ' disabled' : '') + '>' + esc(n) + '</button>';
+    }).join('');
+    var label = kind === 'pic' ? 'PIC (I)' : 'Pelapor (dicatat di Notes K)';
+    var info = kind === 'pic'
+      ? (selected.length ? selected.length + ' dipilih · klik nama untuk pilih / batal' : 'belum ada · klik nama untuk memilih')
+      : (selected.length ? 'klik lagi untuk batal' : 'tidak terbaca dari chat · pilih');
+    return '<div class="field wide picker' + (selected.length ? '' : ' is-missing') + '" data-kind="' + kind + '">' +
+      '<div class="label-row"><span class="k">' + label + '</span><span class="hint">' + esc(info) + '</span></div>' +
+      '<div class="pic-chips">' + (chips || '<span class="muted small">Belum ada nama tersimpan.</span>') + '</div>' +
+      (disabled ? '' : '<div class="pic-add"><input type="text" class="pic-new" maxlength="60" placeholder="+ Nama lain" aria-label="Tambah nama">' +
+        '<span class="hint">Enter untuk menambah</span></div>') + '</div>';
+  }
+
+  function toggleName(list, name, multi) {
+    var k = name.toLowerCase();
+    var has = list.some(function (n) { return n.toLowerCase() === k; });
+    if (!multi) return has ? [] : [name];
+    return has ? list.filter(function (n) { return n.toLowerCase() !== k; }) : list.concat(name);
+  }
+
+  function addName(kind, name) {
+    if (!state.extraNames[kind].some(function (n) { return n.toLowerCase() === name.toLowerCase(); })) state.extraNames[kind].push(name);
+  }
+
+  /** Klik nama / Enter di "+ Nama lain". `get(art, kind)` = pilihan sekarang, `set(art, kind, list)` = simpan. */
+  function pickerClick(e, get, set) {
+    var chip = e.target.closest('.pic-chip');
+    if (!chip || chip.disabled) return false;
+    var art = chip.closest('.rec'), kind = chip.closest('.picker').getAttribute('data-kind');
+    set(art, kind, toggleName(get(art, kind), chip.getAttribute('data-name'), kind === 'pic'));
+    return true;
+  }
+  function pickerEnter(e, get, set, refreshAll) {
+    if (e.key !== 'Enter' || !e.target.classList.contains('pic-new')) return false;
+    e.preventDefault();
+    var name = e.target.value.replace(/\s+/g, ' ').trim();
+    if (!name) return true;
+    var art = e.target.closest('.rec'), kind = e.target.closest('.picker').getAttribute('data-kind');
+    addName(kind, name);
+    var cur = get(art, kind);
+    var has = cur.some(function (n) { return n.toLowerCase() === name.toLowerCase(); });
+    set(art, kind, has ? cur : (kind === 'pic' ? cur.concat(name) : [name]));
+    refreshAll(kind);
+    var input = art.querySelector('.picker[data-kind="' + kind + '"] .pic-new');
+    if (input) input.focus();
+    return true;
+  }
+
+  // Periksa
+  function previewGet(art, kind) {
+    var r = recById(Number(art.getAttribute('data-id')));
+    return kind === 'pic' ? splitNames(val(r, 'PIC')) : repList(r);
+  }
+  function previewSet(art, kind, list) {
+    var id = Number(art.getAttribute('data-id'));
+    if (kind === 'pic') (state.edits[id] = state.edits[id] || {}).PIC = list.join(', ');
+    else state.reporter[id] = list[0] || '';
+    refreshCard(art, recById(id));
+  }
+  function previewRefreshAll(kind) {
+    each('#rec-list .rec', function (art) {
+      var r = recById(Number(art.getAttribute('data-id')));
+      swap(art.querySelector('.picker[data-kind="' + kind + '"]'), picker(kind, kind === 'pic' ? splitNames(val(r, 'PIC')) : repList(r), !selectable(r)));
+    });
+  }
+  /** Perbarui bagian kartu yang bergantung pada PIC/pelapor tanpa membuang isian lain. */
+  function refreshCard(art, r) {
+    var can = selectable(r);
+    swap(art.querySelector('.picker[data-kind="pic"]'), picker('pic', splitNames(val(r, 'PIC')), !can));
+    swap(art.querySelector('.picker[data-kind="rep"]'), picker('rep', repList(r), !can));
+    swap(art.querySelector('.strip-slot'), previewStrip(r));
+    swap(art.querySelector('.notes-k'), biField('Notes (K)', val(r, 'NOTES'), '', 'wide notes-k'));
+    var ta = art.querySelector('[data-edit="NOTES"]');
+    if (ta && !(state.edits[r.id] && state.edits[r.id].hasOwnProperty('NOTES'))) ta.value = val(r, 'NOTES');
+    art.querySelector('.foot-row .cells').innerHTML = emptyLine(r);
+    art.querySelector('.tags').innerHTML = cardTags(r);
+    updateCounts();
   }
 
   // ---------- Edit isi sel sebelum impor (Edit.gs) ----------
   var TIME_RE = /^(\d{1,2})\s*[:.]\s*(\d{2})$/;
   var DATE_RE = /^(\d{4})\s*[.\-\/]\s*(\d{1,2})\s*[.\-\/]\s*(\d{1,2})$/;
 
-  /** Isi sel hasil parser (yang akan ditulis kalau tidak diedit). */
+  /** Isi sel hasil parser (yang akan ditulis kalau tidak diedit). K sudah termasuk pelapor terpilih. */
   function defaults(r) {
     return { MACHINE: r.cells.C || '', DESC: r.cells.D || '', ROOT_CAUSE: '', SOLUTION: '',
-      END_TIME: r.end || '', PIC: r.pic || '', DATE: r.date || '', NOTES: r.cells.K || '' };
+      END_TIME: r.end || '', PIC: r.pic || '', DATE: r.date || '', NOTES: withReporter(r.cells.K || '', reporterOf(r)) };
   }
   function val(r, k) {
     var e = state.edits[r.id];
@@ -384,8 +775,8 @@
     return '<div class="field"><label class="k" for="ed-' + r.id + '-' + k + '">' + esc(label) + '</label>' +
       '<input type="text" id="ed-' + r.id + '-' + k + '" data-edit="' + k + '" value="' + esc(v) + '" placeholder="' + esc(ph) + '"' +
       (bad ? ' class="invalid"' : '') + '>' +
-      ((k === 'END_TIME' || k === 'DATE') ? '<p class="hint err-text' + (bad ? '' : ' hidden') + '" data-err="' + k + '">Format: ' +
-        (k === 'DATE' ? 'tahun/bulan/tanggal, mis. 2026/10/20' : 'jam:menit, mis. 20:30') + '</p>' : '') + '</div>';
+      '<p class="hint err-text' + (bad ? '' : ' hidden') + '" data-err="' + k + '">Format: ' +
+        (k === 'DATE' ? 'tahun/bulan/tanggal, mis. 2026/10/20' : 'jam:menit, mis. 20:30') + '</p></div>';
   }
   function editForm(r, can) {
     return '<div class="rec-body edit-form">' +
@@ -397,10 +788,11 @@
       '<div class="wide edit-row">' +
         editInput(r, 'END_TIME', 'End Time (G)', 'mis. 20:30') +
         '<div class="field"><div class="k">Discipline (H)</div>' + disciplineSelect(r, can) + '</div>' +
-        editInput(r, 'PIC', 'PIC (I)', 'nama, pisahkan dengan koma') +
         editInput(r, 'DATE', 'Date (J)', 'mis. 2026/10/20') +
       '</div>' +
-      '<div class="wide">' + editText(r, 'NOTES', 'Notes (K)', 3) + '</div>' +
+      picker('pic', splitNames(val(r, 'PIC')), !can) +
+      picker('rep', repList(r), !can) +
+      '<div class="wide">' + editText(r, 'NOTES', 'Notes (K)', 2) + '</div>' +
       '<p class="hint wide">' + (state.preview.translated
         ? 'Teks tanpa huruf Mandarin dianggap Bahasa Indonesia dan diterjemahkan saat impor; klik ↻ untuk melihat hasilnya sekarang. Teks berhuruf Mandarin ditulis apa adanya.'
         : 'Tanpa terjemahan: isi ditulis apa adanya.') + '</p>' +
@@ -408,13 +800,10 @@
   }
 
   function rerenderCard(id) {
-    var r = state.preview.records.filter(function (x) { return x.id === id; })[0];
+    var r = recById(id);
     var art = document.querySelector('#rec-list .rec[data-id="' + id + '"]');
     if (!r || !art) return null;
-    var tmp = document.createElement('div');
-    tmp.innerHTML = card(r);
-    var fresh = tmp.firstChild;
-    art.parentNode.replaceChild(fresh, art);
+    var fresh = swap(art, card(r));
     updateCounts();
     return fresh;
   }
@@ -465,7 +854,7 @@
     $('btn-back').disabled = true;
     var finish = function () {
       flash('');
-      loadComplete().catch(function () { /* angka di tab Lengkapi saja */ });
+      loadDashboard(); // angka Lengkapi + Ringkasan
       renderResult(total);
       show('result');
     };
@@ -507,12 +896,18 @@
     var hero = '<div class="card hero' + (w.length ? '' : ' empty-result') + '">' +
       '<div class="hero-icon">' + (w.length ? '✓' : '!') + '</div>' +
       '<div class="grow"><h1>' + (w.length ? w.length + ' laporan ditulis' : 'Tidak ada yang ditulis') + '</h1>' +
-      '<p class="muted">' + (w.length ? esc(where) + '. Lengkapi kolom yang kosong setelah tanya mentor.' : 'Lihat pesan di bawah.') + '</p></div>' +
+      '<p class="muted">' + (w.length ? esc(where) + '. Kirim teks chat di bawah ke teknisi untuk melengkapi yang kosong.' : 'Lihat pesan di bawah.') + '</p></div>' +
       '<a class="btn ghost" href="' + esc(res.url) + '" target="_blank" rel="noopener">Buka spreadsheet ↗</a></div>';
 
     var errors = res.errors.length
       ? '<div class="alert err"><b>Tidak ditulis:</b><ul>' + res.errors.map(function (e) { return '<li>' + esc(e) + '</li>'; }).join('') + '</ul></div>'
       : '';
+
+    state.written = w;
+    var chat = w.length ? '<div class="card"><div class="card-row"><h2>Teks chat untuk teknisi</h2>' +
+      '<button type="button" class="btn primary sm" id="btn-copy">Salin</button></div>' +
+      '<div class="muted small">Ringkas: masalah, jam, PIC, pelapor, lalu baris ✏️ yang tinggal diisi. Boleh diedit sebelum disalin.</div>' +
+      '<textarea id="mentor-text" class="chat-text" spellcheck="false">' + esc(chatText(w.map(writtenChat))) + '</textarea></div>' : '';
 
     var table = w.length ? '<div class="card"><h2>Baris yang ditulis</h2><div class="table-wrap"><table>' +
       '<thead><tr><th>No.</th><th>Sheet · baris</th><th>Waktu</th><th>Machine · Deskripsi</th><th>Perlu dilengkapi</th></tr></thead><tbody>' +
@@ -524,68 +919,68 @@
           '<td><div class="chips">' + colChips(x.empty) + '</div></td></tr>';
       }).join('') + '</tbody></table></div></div>' : '';
 
-    state.written = w;
-    var opt = function (k, label) {
-      return '<label><input type="checkbox" data-opt="' + k + '"' + (state.mentorOpts[k] ? ' checked' : '') + '> ' + esc(label) + '</label>';
-    };
-    var mentor = w.length ? '<div class="card"><div class="card-row"><h2>Pertanyaan untuk mentor</h2>' +
-      '<button type="button" class="btn ghost sm" id="btn-copy">Salin</button></div>' +
-      '<div class="muted small">Teks siap kirim untuk melengkapi kolom yang kosong. Boleh diedit langsung di kotak ini.</div>' +
-      '<div class="mentor-opts"><span>Sertakan:</span>' + opt('time', 'Waktu & durasi') + opt('pic', 'PIC') +
-        opt('status', 'Jenis & status') + opt('where', 'Sheet & baris') +
-        '<span class="hint">Mengubah pilihan menyusun ulang teks.</span></div>' +
-      '<textarea id="mentor-text" class="mono">' + esc(mentorText(w)) + '</textarea></div>' : '';
-
     var actions = '<div class="end-actions">' +
       (w.length ? '<button type="button" class="btn ghost" id="btn-to-complete">Lengkapi Root Cause / Solution →</button>' : '') +
       (APP_MODE === 'dialog' ? '<button type="button" class="btn ghost" id="btn-close">Tutup</button>' : '') +
       '<button type="button" class="btn primary" id="btn-again">Paste laporan berikutnya</button></div>';
 
-    $('view-result').innerHTML = hero + errors + table + mentor + actions;
+    $('view-result').innerHTML = hero + errors + chat + table + actions;
   }
 
-  function minutesBetween(a, b) {
-    var p = function (s) { var m = /^(\d{1,2}):(\d{2})$/.exec(s || ''); return m ? +m[1] * 60 + +m[2] : null; };
-    var x = p(a), y = p(b);
-    return x !== null && y !== null && y >= x ? y - x : null;
-  }
-
-  function mentorText(written) {
-    var o = state.mentorOpts;
-    var rows = written.filter(function (x) { return x.empty.some(function (y) { return QUESTIONS[y.key]; }); });
-    if (!rows.length) return 'Semua kolom sudah terisi, tidak ada yang perlu ditanyakan.';
-    var out = ['Mohon bantuannya untuk melengkapi laporan berikut:', ''];
-    rows.forEach(function (x, i) {
-      out.push((i + 1) + ') No. ' + x.no + ' · ' + (x.machine || '-'));
-      if (o.time) {
-        var d = minutesBetween(x.start, x.end);
-        var dur = d !== null ? d + ' menit' : (x.durationText && x.durationText !== '-' ? x.durationText : '');
-        var when = [x.date, [x.start, x.end].filter(Boolean).join('–')].filter(Boolean).join(' ');
-        if (when || dur) out.push('   Waktu: ' + when + (dur ? ' (' + dur + ')' : ''));
-      }
-      if (x.description) out.push('   Masalah: ' + x.description.replace(/\s*\n\s*/g, '; '));
-      if (o.pic && x.pic) out.push('   PIC: ' + x.pic);
-      if (o.status) {
-        var st = [x.type && 'Jenis: ' + x.type, x.lineStatus && 'Status lini: ' + x.lineStatus,
-          x.handling && 'Penanganan: ' + x.handling].filter(Boolean).join(' · ');
-        if (st) out.push('   ' + st);
-      }
-      if (o.where) out.push('   Lokasi: ' + x.sheet + ' baris ' + x.row);
-      x.empty.forEach(function (y) {
-        var q = QUESTIONS[y.key];
-        if (!q) return;
-        if (y.key === 'DISCIPLINE' && x.type) q += ' (jenis dari operator: "' + x.type + '")';
-        out.push('   - ' + q);
-      });
+  // ---------- Teks chat untuk teknisi ----------
+  /** item = { title, problem, date, start, end, downtime, pic, reporter, ask: [label kolom kosong] } */
+  function chatText(items) {
+    items = items.filter(function (it) { return it.ask.length; });
+    if (!items.length) return 'Semua laporan sudah lengkap, tidak ada yang perlu ditanyakan ✓';
+    var out = ['🔧 Mohon dilengkapi (' + items.length + ' laporan)', 'Isi baris ✏️ lalu kirim balik ya 🙏', ''];
+    items.forEach(function (it, i) {
+      out.push((i + 1) + ') ' + (oneLine(it.title) || '-'));
+      if (it.problem) out.push('❗ ' + oneLine(it.problem));
+      var dt = parseYmd(it.date);
+      var time = it.start || it.end ? (it.start || '?') + ' → ' + (it.end || '?') : '';
+      var dur = it.downtime !== null && it.downtime !== undefined && it.downtime !== '' ? '(' + it.downtime + ' menit)' : '';
+      var when = [dt ? dayMonth(dt) : '', time].filter(Boolean).join(' · ');
+      if (when || dur) out.push('⏱ ' + [when, dur].filter(Boolean).join(' '));
+      if (it.pic) out.push('👷 PIC: ' + it.pic);
+      if (it.reporter) out.push('📝 Pelapor: ' + it.reporter);
+      it.ask.forEach(function (a) { out.push('✏️ ' + a + ': '); });
       out.push('');
     });
-    return out.join('\n').trim();
+    return out.join('\n').replace(/\s+$/, '');
+  }
+
+  function writtenChat(x) {
+    var d = minutesBetween(x.start, x.end);
+    return { title: x.machine, problem: x.description, date: x.date, start: x.start, end: x.end,
+      downtime: d !== null ? d : x.duration, pic: x.pic, reporter: x.reporter,
+      ask: x.empty.map(function (y) { return ASK[y.key]; }).filter(Boolean) };
+  }
+
+  /** Baris Lengkapi: yang ditanyakan hanya yang benar-benar kosong (teks Indonesia yang belum diterjemahkan tidak). */
+  function cmpChat(r) {
+    var pic = cmpPicVal(r), ask = [];
+    if (isEmptyStr(r.rootCause)) ask.push(ASK.ROOT_CAUSE);
+    if (isEmptyStr(r.solution)) ask.push(ASK.SOLUTION);
+    if (isEmptyStr(r.discipline)) ask.push(ASK.DISCIPLINE);
+    if (isEmptyStr(pic)) ask.push(ASK.PIC);
+    if (isEmptyStr(r.end)) ask.push(ASK.END_TIME);
+    return { title: plainText(r.machineOrig || r.machine), problem: plainText(r.descOrig || r.description), date: r.date,
+      start: r.start, end: r.end, downtime: r.downtime, pic: pic, reporter: r.reporter, ask: ask };
+  }
+
+  function showCmpChat(rows, note) {
+    $('cmp-chat-text').value = chatText(rows.map(cmpChat));
+    $('cmp-chat-note').textContent = note;
+    $('cmp-chat').classList.remove('hidden');
+    $('cmp-chat').scrollIntoView({ block: 'start' });
+    window.scrollBy(0, -80);
   }
 
   function copyText(ta, btn) {
+    var label = btn.textContent;
     var done = function () {
       btn.textContent = 'Tersalin ✓';
-      setTimeout(function () { btn.textContent = 'Salin'; }, 1600);
+      setTimeout(function () { btn.textContent = label; }, 1600);
     };
     var fallback = function () {
       ta.focus();
@@ -601,7 +996,7 @@
   function codeHint() {
     var code = $('ns-code').value.trim();
     $('ns-code-hint').textContent = code
-      ? 'Laporan dengan “②Nama proyek: ' + code + '” otomatis masuk ke sheet ini (huruf besar/kecil, spasi, strip diabaikan).'
+      ? 'Laporan dengan “②Nama proyek: ' + code + '” (atau “' + code + ' - …”) otomatis masuk ke sheet ini (huruf besar/kecil, spasi, strip diabaikan).'
       : 'Kosong = sheet ini dipilih manual di “Sheet untuk proyek lain” saat impor.';
   }
 
@@ -631,6 +1026,7 @@
     busy(btn, true, 'Membuat sheet…');
     call('createIssueSheet', opts).then(function (res) {
       renderSheetDone(res);
+      state.dashStale = true;
       return loadInit(res.code ? null : res.sheet);
     }).catch(function (err) { flash(cleanErr(err)); })
       .then(function () { busy(btn, false); });
@@ -657,48 +1053,87 @@
     $('ns-done').classList.remove('hidden');
   }
 
-  // ---------- Lengkapi (E/F/H) ----------
+  // ---------- Lengkapi (E/F/H/PIC) ----------
   function loadComplete() {
     return call('listIncomplete').then(function (d) {
+      var prev = state.cmp || {};
       state.cmp = { rows: d.rows, total: d.total, url: d.url, translate: d.translate, sheets: d.sheets, disciplines: d.disciplines,
-        filter: state.cmp ? state.cmp.filter : '' };
-      $('cmp-badge').textContent = d.total ? d.total : '';
+        roster: d.roster || [], filter: prev.filter || '', date: prev.date || '' };
+      state.cmpPic = {};
+      setBadge(d.total);
       return d;
     });
   }
 
-  function openComplete() {
+  function openComplete(focusKey) {
+    focusKey = typeof focusKey === 'string' ? focusKey : '';
     flash('');
     show('complete');
+    $('cmp-chat').classList.add('hidden');
     $('cmp-title').textContent = 'Memuat…';
     $('cmp-list').innerHTML = '<div class="loading">Membaca sheet…</div>';
-    loadComplete().then(renderComplete).catch(function (e) {
+    loadComplete().then(function () {
+      if (focusKey) { state.cmp.filter = ''; state.cmp.date = ''; }
+      renderComplete();
+      if (focusKey) focusCmp(focusKey);
+    }).catch(function (e) {
       $('cmp-list').innerHTML = '';
       flash('Gagal memuat daftar: ' + cleanErr(e));
     });
   }
 
+  function focusCmp(key) {
+    var art = null;
+    each('#cmp-list .rec', function (a) { if (a.getAttribute('data-key') === key) art = a; });
+    if (!art) {
+      flash('Baris itu tidak ada di daftar (hanya ' + state.cmp.rows.length + ' baris terbaru yang ditampilkan). Buka langsung di sheet.', 'warn');
+      return;
+    }
+    art.scrollIntoView({ block: 'center' });
+    art.classList.add('flash');
+    setTimeout(function () { art.classList.remove('flash'); }, 1700);
+    var ta = art.querySelector('textarea.cmp-input');
+    if (ta) ta.focus({ preventScroll: true });
+  }
+
   function cmpRows() {
-    var f = state.cmp.filter;
-    return state.cmp.rows.filter(function (r) { return !f || r.sheet === f; });
+    var c = state.cmp;
+    return c.rows.filter(function (r) { return (!c.filter || r.sheet === c.filter) && (!c.date || r.date === c.date); });
+  }
+
+  function cmpTitle() {
+    var c = state.cmp;
+    var open = c.rows.filter(function (r) { return r.need.length; }).length;
+    var t = open ? open + ' baris perlu dilengkapi' : 'Semua baris sudah lengkap';
+    if (c.total > c.rows.length) t += ' (menampilkan ' + c.rows.length + ' terbaru dari ' + c.total + ')';
+    $('cmp-title').textContent = t;
   }
 
   function renderComplete() {
     var c = state.cmp;
-    var open = c.rows.filter(function (r) { return r.need.length; }).length;
-    $('cmp-title').textContent = open ? open + ' baris perlu dilengkapi' : 'Semua baris sudah lengkap';
-    if (c.total > c.rows.length) $('cmp-title').textContent += ' (menampilkan ' + c.rows.length + ' terbaru dari ' + c.total + ')';
+    cmpTitle();
     var counts = {};
     c.rows.forEach(function (r) { counts[r.sheet] = (counts[r.sheet] || 0) + 1; });
     $('cmp-sheet').innerHTML = '<option value="">Semua sheet</option>' + c.sheets.map(function (n) {
       return '<option value="' + esc(n) + '"' + (n === c.filter ? ' selected' : '') + '>' + esc(n) + ' (' + (counts[n] || 0) + ')</option>';
     }).join('');
+    var dates = {};
+    c.rows.forEach(function (r) { if (!c.filter || r.sheet === c.filter) dates[r.date || ''] = (dates[r.date || ''] || 0) + 1; });
+    if (c.date && !dates[c.date]) c.date = '';
+    $('cmp-date').innerHTML = '<option value="">Semua tanggal</option>' + Object.keys(dates).filter(Boolean).sort().reverse().map(function (d) {
+      var dt = parseYmd(d);
+      return '<option value="' + esc(d) + '"' + (d === c.date ? ' selected' : '') + '>' +
+        esc(dt ? DAY[dt.getDay()] + ', ' + dayMonth(dt) + ' ' + dt.getFullYear() : d) + ' (' + dates[d] + ')</option>';
+    }).join('');
     var rows = cmpRows();
+    $('cmp-chat-btn').textContent = '💬 Teks chat (' + rows.filter(function (r) { return cmpChat(r).ask.length; }).length + ')';
     $('cmp-list').innerHTML = rows.length ? rows.map(cmpCard).join('')
-      : '<div class="card center muted">Tidak ada baris yang perlu dilengkapi' + (c.filter ? ' di sheet ini' : '') + '.</div>';
+      : '<div class="card center muted">Tidak ada baris yang perlu dilengkapi' + (c.filter || c.date ? ' untuk filter ini' : '') + '.</div>';
   }
 
   function cmpKey(r) { return r.sheet + '|' + r.row; }
+  function cmpByKey(key) { return state.cmp.rows.filter(function (x) { return cmpKey(x) === key; })[0]; }
+  function cmpPicVal(r) { var k = cmpKey(r); return state.cmpPic.hasOwnProperty(k) ? state.cmpPic[k] : (r.pic || ''); }
 
   function cmpText(label, name, value, r) {
     if (hasChinese(value)) return biField(label, value, '');
@@ -723,53 +1158,68 @@
       ? r.downtime + ' menit' + (r.downtimeUnverified ? ' (belum diverifikasi)' : '')
       : (calc !== null ? calc + ' menit' : '');
     var strip = infoStrip([['Mulai', r.start], ['Selesai', r.end], ['Downtime', down, 'accent'],
-      ['Lini / proses', r.process], ['Status lini', r.lineStatus], ['Penanganan', r.handling]]);
+      ['Lini / proses', r.process], ['Pelapor', r.reporter], ['Status lini', r.lineStatus], ['Penanganan', r.handling]]);
     var body = '<div class="rec-body">' + (strip ? '<div class="field wide">' + strip + '</div>' : '') +
       problemBox(r.descOrig, r.description, 'Masalah (D)') +
-      biField('Machine (C)', r.machine, r.machineOrig) + field('PIC (I)', r.pic) + '</div>';
+      biField('Machine (C)', r.machine, r.machineOrig) + (done ? field('PIC (I)', r.pic) : '') + '</div>';
     var disc = isEmptyStr(r.discipline)
       ? '<div class="field"><label class="k">Discipline (H)</label><select class="cmp-input disc is-empty" data-name="discipline">' +
         '<option value="">— kosong —</option>' + state.cmp.disciplines.map(function (d) {
           return '<option value="' + esc(d) + '">' + esc(d) + '</option>';
         }).join('') + '</select></div>'
       : field('Discipline (H)', r.discipline);
-    var form = '<div class="rec-body cmp-form">' +
-      cmpText('Root Cause (E)', 'rootCause', r.rootCause, r) + cmpText('Solution (F)', 'solution', r.solution, r) + disc + '</div>';
+    var form = done ? '' : '<div class="rec-body cmp-form">' +
+      cmpText('Root Cause (E)', 'rootCause', r.rootCause, r) + cmpText('Solution (F)', 'solution', r.solution, r) + disc +
+      picker('pic', splitNames(cmpPicVal(r)), false) + '</div>';
     var foot = done ? '' : '<div class="rec-foot cmp-actions"><span class="cmp-status small"></span>' +
+      '<button type="button" class="btn ghost sm cmp-chat1">💬 Chat</button>' +
       '<button type="button" class="btn primary sm cmp-save">' + (state.cmp.translate ? 'Simpan &amp; terjemahkan' : 'Simpan') + '</button></div>';
     return '<article class="rec cmp ' + (done ? 'is-done' : 'is-on') + '" data-key="' + esc(cmpKey(r)) + '">' + head + body + form + foot + '</article>';
   }
 
-  function isEmptyStr(s) { return !String(s || '').trim(); }
+  function cmpGet(art) { return splitNames(cmpPicVal(cmpByKey(art.getAttribute('data-key'))) ); }
+  function cmpSet(art, kind, list) {
+    state.cmpPic[art.getAttribute('data-key')] = list.join(', ');
+    swap(art.querySelector('.picker[data-kind="pic"]'), picker('pic', list, false));
+    var st = art.querySelector('.cmp-status');
+    if (st && !st.classList.contains('muted')) st.textContent = '';
+  }
+  function cmpRefreshAll() {
+    each('#cmp-list .rec', function (art) {
+      var r = cmpByKey(art.getAttribute('data-key'));
+      swap(art.querySelector('.picker[data-kind="pic"]'), picker('pic', splitNames(cmpPicVal(r)), false));
+    });
+  }
 
   function saveCard(art) {
-    var r = state.cmp.rows.filter(function (x) { return cmpKey(x) === art.getAttribute('data-key'); })[0];
+    var r = cmpByKey(art.getAttribute('data-key'));
     var btn = art.querySelector('.cmp-save');
     var status = art.querySelector('.cmp-status');
     if (!r || !btn || btn.disabled) return;
     var item = { sheet: r.sheet, row: r.row,
       expect: { machine: r.machine, description: r.description, rootCause: r.rootCause, solution: r.solution, discipline: r.discipline } };
     Array.prototype.forEach.call(art.querySelectorAll('.cmp-input'), function (el) { item[el.getAttribute('data-name')] = el.value; });
-    if (isEmptyStr(item.rootCause) && isEmptyStr(item.solution) && !item.discipline) {
+    var pic = cmpPicVal(r);
+    if (pic !== (r.pic || '')) { item.pic = pic; item.expect.pic = r.pic; }
+    if (isEmptyStr(item.rootCause) && isEmptyStr(item.solution) && !item.discipline && item.pic === undefined) {
       status.className = 'cmp-status small warn-text';
-      status.textContent = 'Isi Root Cause, Solution, atau Discipline dulu.';
+      status.textContent = 'Isi Root Cause, Solution, Discipline, atau ubah PIC dulu.';
       return;
     }
     status.className = 'cmp-status small muted';
     status.textContent = state.cmp.translate ? 'Menerjemahkan & menyimpan…' : 'Menyimpan…';
     busy(btn, true, 'Menyimpan…');
     call('saveCompletion', item).then(function (r2) {
-      state.cmp.rows = state.cmp.rows.map(function (x) { return cmpKey(x) === cmpKey(r2) ? r2 : x; });
-      var open = state.cmp.rows.filter(function (x) { return x.need.length; }).length;
+      var key = cmpKey(r2);
+      delete state.cmpPic[key];
+      state.cmp.rows = state.cmp.rows.map(function (x) { return cmpKey(x) === key ? r2 : x; });
       state.cmp.total = Math.max(0, state.cmp.total - (r2.need.length ? 0 : 1));
-      $('cmp-badge').textContent = state.cmp.total || '';
-      var tmp = document.createElement('div');
-      tmp.innerHTML = cmpCard(r2);
-      var fresh = tmp.firstChild;
-      art.parentNode.replaceChild(fresh, art);
-      var st = fresh.querySelector('.cmp-status');
+      state.dashStale = true;
+      setBadge(state.cmp.total);
+      var fresh = swap(art, cmpCard(r2));
+      var st = fresh && fresh.querySelector('.cmp-status');
       if (st) { st.className = 'cmp-status small ok-text'; st.textContent = '✓ Tersimpan. Masih perlu: ' + r2.need.map(function (n) { return n.col; }).join(', '); }
-      $('cmp-title').textContent = open ? open + ' baris perlu dilengkapi' : 'Semua baris sudah lengkap';
+      cmpTitle();
     }).catch(function (e) {
       busy(btn, false);
       status.className = 'cmp-status small err-text';
@@ -778,27 +1228,81 @@
   }
 
   // ---------- event ----------
-  $('modes').addEventListener('click', function (e) {
-    var m = e.target.closest('button[data-mode]');
-    if (!m) return;
-    if (m.getAttribute('data-mode') === 'complete') openComplete();
-    else { flash(''); show(state.importView); }
+  // Semua elemen ber-data-go (tombol header, kartu angka, tombol kosong) -> pindah layar.
+  document.addEventListener('click', function (e) {
+    var g = e.target.closest('[data-go]');
+    if (g && !g.disabled) go(g.getAttribute('data-go'));
   });
+  $('stat-grid').addEventListener('keydown', function (e) {
+    var g = e.target.closest('[data-go]');
+    if (g && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); go(g.getAttribute('data-go')); }
+  });
+
+  // Ringkasan
+  $('heat-grid').addEventListener('click', function (e) {
+    var c = e.target.closest('[data-day]');
+    if (!c) return;
+    var d = state.dash, k = c.getAttribute('data-day');
+    d.day = d.day === k ? '' : k;
+    d.limit = DASH_PAGE;
+    renderHeat();
+    renderRecords();
+  });
+  $('heat-prev').addEventListener('click', function () { state.dash.offset++; renderHeat(); });
+  $('heat-next').addEventListener('click', function () { if (state.dash.offset) { state.dash.offset--; renderHeat(); } });
+  $('rec-mode').addEventListener('click', function (e) {
+    var b = e.target.closest('button[data-mode]');
+    if (!b || !state.dash) return;
+    state.dash.mode = b.getAttribute('data-mode');
+    state.dash.limit = DASH_PAGE;
+    renderRecords();
+  });
+  $('rec-filter').addEventListener('click', function (e) {
+    if (e.target.id !== 'rec-clear') return;
+    state.dash.day = '';
+    renderHeat();
+    renderRecords();
+  });
+  $('records').addEventListener('click', function (e) {
+    if (e.target.id === 'rec-more') { state.dash.limit += DASH_PAGE; renderRecords(); return; }
+    var row = e.target.closest('button.rrow[data-key]');
+    if (row) openComplete(row.getAttribute('data-key'));
+  });
+
+  // Lengkapi
   $('cmp-reload').addEventListener('click', openComplete);
   $('cmp-sheet').addEventListener('change', function () { state.cmp.filter = this.value; renderComplete(); });
+  $('cmp-date').addEventListener('change', function () { state.cmp.date = this.value; renderComplete(); });
+  $('cmp-chat-btn').addEventListener('click', function () {
+    if (!state.cmp) return;
+    var c = state.cmp, rows = cmpRows();
+    var f = [c.filter ? 'sheet ' + c.filter : '', c.date ? 'tanggal ' + c.date : ''].filter(Boolean).join(', ');
+    showCmpChat(rows, 'Dari ' + rows.length + ' baris di daftar' + (f ? ' (' + f + ')' : '') + '. Pilih sheet/tanggal untuk mempersempit.');
+  });
+  $('cmp-chat-close').addEventListener('click', function () { $('cmp-chat').classList.add('hidden'); });
+  $('cmp-chat-copy').addEventListener('click', function () { copyText($('cmp-chat-text'), this); });
   $('cmp-list').addEventListener('click', function (e) {
-    if (e.target.classList.contains('cmp-save')) saveCard(e.target.closest('.rec'));
+    if (pickerClick(e, cmpGet, cmpSet)) return;
+    var art = e.target.closest('.rec');
+    if (e.target.classList.contains('cmp-save')) saveCard(art);
+    else if (e.target.classList.contains('cmp-chat1')) {
+      var r = cmpByKey(art.getAttribute('data-key'));
+      showCmpChat([r], 'Satu laporan: No. ' + (r.no || '–') + ' (' + r.sheet + ' baris ' + r.row + ').');
+    }
   });
   $('cmp-list').addEventListener('input', function (e) {
     var st = e.target.classList.contains('cmp-input') && e.target.closest('.rec').querySelector('.cmp-status');
     if (st && !st.classList.contains('muted')) st.textContent = '';
   });
   $('cmp-list').addEventListener('keydown', function (e) {
+    if (pickerEnter(e, cmpGet, cmpSet, cmpRefreshAll)) return;
     if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && e.target.classList.contains('cmp-input')) {
       e.preventDefault();
       saveCard(e.target.closest('.rec'));
     }
   });
+
+  // Impor
   $('flash').addEventListener('click', function (e) {
     var id = e.target.id;
     if (id !== 'btn-no-translate' && id !== 'btn-retry-translate') return;
@@ -838,18 +1342,13 @@
     } else if (t.classList.contains('disc')) {
       state.disc[id] = t.value;
       t.classList.toggle('is-empty', !t.value);
+      t.closest('.rec').querySelector('.foot-row .cells').innerHTML = emptyLine(recById(id));
     }
   });
 
-  $('view-result').addEventListener('change', function (e) {
-    var k = e.target.getAttribute('data-opt');
-    if (!k) return;
-    state.mentorOpts[k] = e.target.checked;
-    $('mentor-text').value = mentorText(state.written);
-  });
-
-  // Mode edit kartu di layar Periksa.
+  // Mode edit kartu di layar Periksa + pemilih nama.
   $('rec-list').addEventListener('click', function (e) {
+    if (pickerClick(e, previewGet, previewSet)) return;
     var b = e.target.closest('[data-act]');
     if (!b) return;
     var art = b.closest('.rec'), id = Number(art.getAttribute('data-id'));
@@ -865,11 +1364,15 @@
       rerenderCard(id);
     } else if (act === 'cancel-edit') {
       delete state.edits[id];
+      delete state.reporter[id];
       state.editing[id] = false;
       rerenderCard(id);
     } else if (act === 'tr') {
       translateField(art, b.getAttribute('data-key'), b);
     }
+  });
+  $('rec-list').addEventListener('keydown', function (e) {
+    pickerEnter(e, previewGet, previewSet, previewRefreshAll);
   });
   $('rec-list').addEventListener('input', function (e) {
     var k = e.target.getAttribute('data-edit');
@@ -881,9 +1384,9 @@
       e.target.classList.toggle('invalid', bad);
       art.querySelector('[data-err="' + k + '"]').classList.toggle('hidden', !bad);
     }
-    var r = state.preview.records.filter(function (x) { return x.id === id; })[0];
+    var r = recById(id);
     art.querySelector('.foot-row .cells').innerHTML = emptyLine(r);
-    if (k === 'END_TIME') art.querySelector('.strip-slot').outerHTML = previewStrip(r);
+    if (k === 'END_TIME') swap(art.querySelector('.strip-slot'), previewStrip(r));
     updateCounts();
   });
 
