@@ -8,7 +8,7 @@ const { loadGas, plain, readFixture } = require('./helpers');
 const { managerSpreadsheet, services } = require('./mock-sheets');
 
 const SAMPLE = readFixture('sample.txt');
-const FILES = ['Config.gs', 'Parser.gs', 'Translate.gs', 'Sheet.gs', 'Edit.gs', 'Template.gs', 'Complete.gs', 'Ui.gs'];
+const FILES = ['Config.gs', 'Parser.gs', 'Translate.gs', 'Sheet.gs', 'Edit.gs', 'Template.gs', 'Complete.gs', 'Dashboard.gs', 'Ui.gs'];
 
 function setup() {
   const ss = managerSpreadsheet();
@@ -116,4 +116,14 @@ test('tombol ↻ Terjemahkan (translateCell): pratinjau satu sel tanpa menulis',
   assert.equal(gas.translateCell('DESC', '已有中文\n(Already)').value, '已有中文\n(Already)');
   assert.throws(() => gas.translateCell('DISCIPLINE', 'Machine'), /tidak diterjemahkan/);
   assert.ok(ss.getSheets().every((sh) => sh.writes === 0));
+});
+
+test('jam selesai (G) diedit -> durasi di Notes (K) ikut dihitung ulang, peringatan ⑨ lama dibuang', () => {
+  const { gas, geely } = setup();
+  imp(gas, { END_TIME: '20:40' });
+  assert.match(geely.get('K18'), /影响时长：25分钟/);
+  assert.match(geely.get('K18'), /Downtime: 25 min/);
+  assert.match(geely.note('K18'), /⑨ tertulis 8 menit, hitungan ④→⑧ = 25 menit/);
+  imp(gas, {}, { END_TIME: '21:40', NOTES: 'catatan manual' }); // K diedit manual: tidak dihitung ulang
+  assert.equal(geely.get('K21'), '中:EN:catatan manual\n(EN:catatan manual)'); // ditulis (diterjemahkan), tidak diganti hitungan ulang
 });

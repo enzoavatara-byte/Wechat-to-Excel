@@ -11,7 +11,7 @@
  */
 var APP_NAME = 'WeChat Import';
 // Diisi otomatis oleh `npm run build` (dist/). Tampil di UI & setup untuk memastikan kode terbaru yang jalan.
-var APP_VERSION = '3cff90a';
+var APP_VERSION = 'b13b887';
 
 // Struktur sheet manajer: header di baris 8, data mulai baris 9.
 var ROW = {
@@ -61,6 +61,10 @@ var DISCIPLINE_MAP = {
 // Jenis (⑥-1) yang default TIDAK dicentang saat impor (mis. pergantian lem).
 // Tetap tampil di pratinjau supaya laporan yang salah label bisa dicentang manual.
 var SKIP_TYPES = ['changeover'];
+
+// Nama PIC tim (opsional), muncul sebagai pilihan di pemilih PIC walau belum pernah dipakai.
+// Nama yang sudah ada di kolom I (Responsibility) sheet issue mana pun otomatis ikut muncul.
+var PIC_NAMES = [];
 
 // ---------- Terjemahan (Translate.gs) ----------
 
@@ -939,6 +943,48 @@ function issueSheetNames_(ss) {
   return ss.getSheets().filter(isIssueSheet_).map(function (sh) { return sh.getName(); });
 }
 
+// ---------- Daftar PIC ----------
+
+/** "a, b; c" -> ['a', 'b', 'c'] (tanpa duplikat, huruf besar/kecil diabaikan). */
+function splitPics_(s) {
+  var seen = {};
+  return String(s || '').split(/\s*[,;、\n]\s*/).map(function (n) { return n.replace(/\s+/g, ' ').trim(); })
+    .filter(function (n) {
+      var k = n.toLowerCase();
+      if (!n || isBlank_(n) || seen[k]) return false;
+      seen[k] = true;
+      return true;
+    });
+}
+
+/**
+ * Nama untuk pemilih PIC: PIC_NAMES (Config) + semua nama di kolom I sheet issue, paling sering dipakai
+ * dulu. Nama yang sama dengan huruf besar/kecil berbeda digabung (ejaan yang paling sering dipakai menang).
+ */
+function picRoster_(ss) {
+  var count = {};
+  var forms = {};
+  var add = function (name, weight, used) {
+    var k = name.toLowerCase();
+    if (!forms[k]) { forms[k] = {}; count[k] = 0; }
+    forms[k][name] = (forms[k][name] || 0) + weight;
+    count[k] += used;
+  };
+  PIC_NAMES.forEach(function (n) { splitPics_(n).forEach(function (x) { add(x, 1000, 0); }); });
+  issueSheetNames_(ss).forEach(function (name) {
+    var sh = ss.getSheetByName(name);
+    var last = sh.getLastRow();
+    if (last < ROW.DATA_START) return;
+    sh.getRange(ROW.DATA_START, COL.PIC, last - ROW.DATA_START + 1, 1).getDisplayValues().forEach(function (r) {
+      splitPics_(r[0]).forEach(function (x) { add(x, 1, 1); });
+    });
+  });
+  return Object.keys(forms).map(function (k) {
+    var best = Object.keys(forms[k]).sort(function (a, b) { return forms[k][b] - forms[k][a]; })[0];
+    return { name: best, count: count[k] };
+  }).sort(function (a, b) { return b.count - a.count || a.name.toLowerCase().localeCompare(b.name.toLowerCase()); });
+}
+
 // ---------- Rute proyek ----------
 
 // Kode proyek untuk sheet yang dibuat lewat menu "Buat sheet baru" disimpan sebagai developer
@@ -1217,6 +1263,8 @@ function toView_(r) {
     duration: r.duration,
     durationText: durationText_(r),
     level: r.level,
+    project: r.project,
+    process: r.process,
     machine: r.machine,
     description: r.description,
     type: r.type,
@@ -1263,6 +1311,7 @@ function importWeChat(text, otherSheet, picks, opts) {
     try {
       if (wantTranslate_(opts)) translateRecords_(items.map(function (it) { return it.rec; }));
       prepareEdits_(items, wantTranslate_(opts));
+      items.forEach(function (it) { if (!it.error) applyTimeEdits_(it.rec, it.cells); });
     } catch (e) {
       throw new Error('Terjemahan gagal, tidak ada yang ditulis: ' + (e.message || e) + '. Coba lagi, atau lanjut tanpa terjemahan.');
     }
@@ -1385,6 +1434,27 @@ function prepareEdits_(items, translate) {
     if (!it.error && !c && !d) it.error = 'Machine (C) dan Deskripsi (D) tidak boleh kosong dua-duanya';
   });
   return items;
+}
+
+/**
+ * Jam selesai (G) / tanggal (J) yang diedit ikut dipakai untuk menghitung ulang durasi di Notes (K),
+ * supaya K tidak menunjukkan downtime lama. Tidak dilakukan kalau K sendiri diedit manual.
+ */
+function applyTimeEdits_(rec, cells) {
+  if (!cells || cells.hasOwnProperty('NOTES')) return;
+  var hasT = cells.hasOwnProperty('END_TIME'), hasD = cells.hasOwnProperty('DATE');
+  if (!hasT && !hasD) return;
+  if (hasD) {
+    var d = parseEditDate_(cells.DATE);
+    var sameDay = !rec.end.date || (rec.start.date && fmtDate_(rec.end.date) === fmtDate_(rec.start.date));
+    rec.start.date = d;
+    if (sameDay) rec.end.date = d;
+  }
+  if (hasT) rec.end.time = parseEditTime_(cells.END_TIME);
+  rec.warnings = rec.warnings.filter(function (w) {
+    return !/^⑨ tertulis|^⑧ lebih awal|^Durasi \d+ menit \(> 24 jam\)/.test(w.msg);
+  });
+  computeDuration_(rec);
 }
 
 /** Tombol "↻ Terjemahkan" di layar Periksa: pratinjau hasil satu sel tanpa menulis apa pun. */
@@ -1598,6 +1668,43 @@ function normDate_(shown) {
   return fmtDate_({ y: d.getUTCFullYear(), m: d.getUTCMonth() + 1, d: d.getUTCDate() });
 }
 
+/**
+ * Jam mulai, downtime, jenis & status dari kolom K (Notes) yang ditulis tool, dalam format apa pun:
+ * "开始：18:05；影响时长：18分钟…\n(…Start: 18:05; Downtime: 18 min; …)" atau "Mulai: 18:05 | Durasi: 18 menit | …".
+ * Teks Bahasa Indonesia dari catatan sel K ("Asli (ID): … | Lini: Mesin pulih | …") didahulukan karena
+ * lebih mudah dibaca. Notes buatan manajer (teks bebas) -> semua kosong.
+ */
+function parseNotesInfo_(k, note) {
+  var s = String(k || '');
+  var n = String(note || '');
+  var pick = function (src, re) {
+    var m = re.exec(src);
+    var v = m ? m[1].trim() : '';
+    return v === '-' ? '' : v;
+  };
+  var first = function (re1, re2, re3) { return pick(n, re1) || pick(s, re2) || (re3 ? pick(s, re3) : ''); };
+  var down = pick(s, /(?:Downtime|Durasi)\s*:\s*(\d+)\s*(?:min|menit)/) || pick(s, /影响时长：\s*(\d+)\s*分钟/);
+  return {
+    start: pick(s, /(?:Start|Mulai)\s*:\s*(\d{1,2}:\d{2})/) || pick(s, /开始：\s*(\d{1,2}:\d{2})/),
+    downtime: down ? Number(down) : null,
+    unverified: /unverified|belum diverifikasi|未核实/.test(s),
+    type: first(/Jenis:\s*([^|\n]+)/, /Jenis:\s*([^|\n]+)/, /Type:\s*([^;)\n]+)/),
+    lineStatus: first(/Lini:\s*([^|\n]+)/, /Lini:\s*([^|\n]+)/, /Line status:\s*([^;)\n]+)/),
+    handling: first(/Penanganan:\s*([^|\n]+)/, /Penanganan:\s*([^|\n]+)/, /Handling:\s*([^;)\n]+)/)
+  };
+}
+
+function minutesOf_(s) {
+  var m = /^(\d{1,2}):(\d{2})$/.exec(String(s || '').trim());
+  return m ? +m[1] * 60 + +m[2] : null;
+}
+
+/** Downtime dari jam mulai & jam selesai (G) kalau bisa (G yang diedit tetap benar), selain itu dari K. */
+function rowDowntime_(start, end, fromNotes) {
+  var a = minutesOf_(start), b = minutesOf_(end);
+  return a !== null && b !== null && b >= a ? b - a : fromNotes;
+}
+
 /** Satu baris sheet sebagai objek untuk UI. `cur` = nilai tampilan B:K, `notes` = catatan B:K. */
 function completeRow_(name, sheetId, row, cur, notes) {
   var get = function (k) { return cur[COL[k] - COL.NO]; };
@@ -1606,6 +1713,8 @@ function completeRow_(name, sheetId, row, cur, notes) {
   var todo = function (k) { return isEmpty_(get(k)) || !hasChinese_(get(k)); };
   var need = ['ROOT_CAUSE', 'SOLUTION'].filter(todo);
   if (isEmpty_(get('DISCIPLINE'))) need.push('DISCIPLINE');
+  var info = parseNotesInfo_(get('NOTES'), note('NOTES'));
+  var machineSrc = splitMachine_(originalFromNote_(note('MACHINE')) || get('MACHINE'));
   return {
     sheet: name,
     sheetId: sheetId,
@@ -1622,6 +1731,13 @@ function completeRow_(name, sheetId, row, cur, notes) {
     end: get('END_TIME'),
     date: normDate_(get('DATE')),
     dateShown: get('DATE'),
+    start: info.start,
+    downtime: rowDowntime_(info.start, get('END_TIME'), info.downtime),
+    downtimeUnverified: info.unverified,
+    type: info.type,
+    lineStatus: info.lineStatus,
+    handling: info.handling,
+    process: machineSrc ? machineSrc.process : '',
     need: need.map(function (k) { return { key: k, col: colLetter_(COL[k]) }; })
   };
 }
@@ -1656,7 +1772,8 @@ function listIncomplete() {
     sheets: issueSheetNames_(ss),
     url: ss.getUrl(),
     translate: TRANSLATE,
-    disciplines: DISCIPLINES
+    disciplines: DISCIPLINES,
+    roster: picRoster_(ss)
   };
 }
 
@@ -1678,7 +1795,8 @@ function saveCompletion(item) {
     var data = readRows_(sh, row, 1);
     var cur = completeRow_(sh.getName(), sh.getSheetId(), row, data.vals[0], data.notes[0]);
     var exp = item.expect || {};
-    ['machine', 'description', 'rootCause', 'solution', 'discipline'].forEach(function (k) {
+    ['machine', 'description', 'rootCause', 'solution', 'discipline', 'pic'].forEach(function (k) {
+      if (k === 'pic' && !exp.hasOwnProperty('pic')) return; // PIC hanya dicek kalau UI mengirimnya
       if (String(exp[k] == null ? '' : exp[k]) !== cur[k]) {
         throw new Error('Baris ' + row + ' di "' + cur.sheet + '" sudah berubah sejak daftar dimuat. Klik "Muat ulang".');
       }
@@ -1698,7 +1816,10 @@ function saveCompletion(item) {
     } else {
       disc = '';
     }
-    if (!fields.length && !disc) throw new Error('Tidak ada yang diisi.');
+    // PIC dari pemilih: nama apa adanya (tidak diterjemahkan), digabung ", ".
+    var pic = item.pic == null ? null : splitPics_(item.pic).join(', ');
+    if (pic === cur.pic) pic = null;
+    if (!fields.length && !disc && pic === null) throw new Error('Tidak ada yang diisi.');
 
     // Terjemahkan dulu (kecuali yang sudah ditulis dengan huruf Mandarin), baru tulis.
     var toTranslate = TRANSLATE ? fields.filter(function (f) { return !hasChinese_(f.text); }) : [];
@@ -1720,6 +1841,7 @@ function saveCompletion(item) {
       sh.getRange(row, COL[f.key]).setValue(asText_(f.value)).setNote(f.note);
     });
     if (disc) sh.getRange(row, COL.DISCIPLINE).setValue(disc);
+    if (pic !== null) sh.getRange(row, COL.PIC).setValue(asText_(pic));
     SpreadsheetApp.flush();
 
     var after = readRows_(sh, row, 1);
@@ -1727,6 +1849,44 @@ function saveCompletion(item) {
   } finally {
     lock.releaseLock();
   }
+}
+
+// ======================= Dashboard.gs =======================
+
+/**
+ * Halaman Ringkasan (beranda web app): semua baris issue (C atau D terisi) dari semua sheet issue,
+ * dalam bentuk ringkas untuk heatmap, kartu angka, dan riwayat. Statistik dihitung di browser.
+ */
+function getDashboard() {
+  var ss = ss_();
+  var rows = [];
+  issueSheetNames_(ss).forEach(function (name) {
+    var sh = ss.getSheetByName(name);
+    var last = sh.getLastRow();
+    if (last < ROW.DATA_START) return;
+    var data = readRows_(sh, ROW.DATA_START, last - ROW.DATA_START + 1);
+    data.vals.forEach(function (v, i) {
+      if (isEmpty_(v[COL.MACHINE - COL.NO]) && isEmpty_(v[COL.DESC - COL.NO])) return;
+      var r = completeRow_(name, sh.getSheetId(), ROW.DATA_START + i, v, data.notes[i]);
+      rows.push({
+        sheet: r.sheet,
+        sheetId: r.sheetId,
+        row: r.row,
+        no: r.no,
+        date: r.date,
+        start: r.start,
+        end: r.end,
+        downtime: r.downtime,
+        process: r.process,
+        machine: r.machineOrig || r.machine,
+        problem: r.descOrig || r.description,
+        pic: r.pic,
+        complete: !isEmpty_(r.rootCause) && !isEmpty_(r.solution),
+        need: r.need.map(function (n) { return n.col; })
+      });
+    });
+  });
+  return { rows: rows, url: ss.getUrl(), spreadsheetName: ss.getName(), version: APP_VERSION };
 }
 
 // ======================= Ui.gs =======================
@@ -1863,6 +2023,7 @@ function getInitData() {
     }),
     disciplines: DISCIPLINES,
     headerRow: ROW.HEADER,
+    roster: picRoster_(ss),
     version: APP_VERSION
   };
 }

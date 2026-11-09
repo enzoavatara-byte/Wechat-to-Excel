@@ -8,7 +8,7 @@ const { loadGas, plain, readFixture } = require('./helpers');
 const { managerSpreadsheet, services } = require('./mock-sheets');
 
 const SAMPLE = readFixture('sample.txt');
-const FILES = ['Config.gs', 'Parser.gs', 'Translate.gs', 'Sheet.gs', 'Edit.gs', 'Template.gs', 'Complete.gs', 'Ui.gs'];
+const FILES = ['Config.gs', 'Parser.gs', 'Translate.gs', 'Sheet.gs', 'Edit.gs', 'Template.gs', 'Complete.gs', 'Dashboard.gs', 'Ui.gs'];
 
 /** Spreadsheet manajer + 2 laporan diimpor (Geely list (2) baris 18 & 19, H = Machine, E/F kosong). */
 function setup() {
@@ -128,4 +128,44 @@ test('pengaman: Discipline di luar dropdown, H yang sudah terisi, isian kosong, 
   assert.throws(() => gas.saveCompletion(Object.assign({}, base, { rootCause: '   ' })), /Tidak ada yang diisi/);
   assert.throws(() => gas.saveCompletion(Object.assign({}, base, { row: 8, rootCause: 'x' })), /Nomor baris tidak valid/);
   assert.throws(() => gas.saveCompletion(Object.assign({}, base, { sheet: 'Revision_History', rootCause: 'x' })), /bukan sheet issue/);
+});
+
+test('info baris: jam mulai, downtime, status lini, proses dibaca dari K & catatan sel', () => {
+  const { gas } = setup();
+  const r = find(plain(gas.listIncomplete()), 'Geely list (2)', 18); // 20:15–20:23, Press Modul
+  assert.deepEqual([r.start, r.end, r.downtime, r.process, r.lineStatus, r.handling, r.type],
+    ['20:15', '20:23', 8, 'Press Modul', 'Mesin pulih', 'Selesai penanganan', 'Mesin']);
+  assert.equal(r.downtimeUnverified, false);
+});
+
+test('parseNotesInfo_: format Mandarin+English, Bahasa Indonesia, dan Notes bebas manajer', () => {
+  const { gas } = setup();
+  const bi = '等级：L1；开始：18:05；影响时长：16分钟（未核实）；类型：设备；产线状态：设备已恢复；处理状态：处理完成\n' +
+    '(Level: L1; Start: 18:05; Downtime: 16 min (unverified); Type: Machine; Line status: Machine recovered; Handling: Handling completed)';
+  assert.deepEqual(plain(gas.parseNotesInfo_(bi, '')),
+    { start: '18:05', downtime: 16, unverified: true, type: 'Machine', lineStatus: 'Machine recovered', handling: 'Handling completed' });
+  assert.deepEqual(plain(gas.parseNotesInfo_(bi, 'Asli (ID): Level: L1 | Jenis: Mesin | Lini: Mesin pulih | Penanganan: Selesai\n⚠ x')),
+    { start: '18:05', downtime: 16, unverified: true, type: 'Mesin', lineStatus: 'Mesin pulih', handling: 'Selesai' });
+  const id = 'Level: L1 | Mulai: 7:40 | Durasi: 25 menit | Jenis: Mesin | Lini: - | Penanganan: sudah penanganan\n⚠ ⑦-1 Status lini tidak ada';
+  assert.deepEqual(plain(gas.parseNotesInfo_(id, '')),
+    { start: '7:40', downtime: 25, unverified: false, type: 'Mesin', lineStatus: '', handling: 'sudah penanganan' });
+  assert.deepEqual(plain(gas.parseNotesInfo_('建议：工单下发SOP\n(Recommendation: SOP for Work Order Issuance)', '')),
+    { start: '', downtime: null, unverified: false, type: '', lineStatus: '', handling: '' });
+});
+
+test('PIC: daftar nama dari kolom I semua sheet (ejaan terbanyak menang), simpan PIC dari pemilih', () => {
+  const { gas, geely, ss } = setup();
+  ss.getSheetByName('LImo 7 list').set('C9', 'x').set('I9', 'Muhamad gilang, Budi').set('I10', 'iqbal');
+  const list = plain(gas.listIncomplete());
+  assert.deepEqual(list.roster.map((p) => [p.name, p.count]),
+    [['Muhamad gilang', 2], ['Alvansa', 1], ['Budi', 1], ['iqbal', 1]]);
+  const r = find(list, 'Geely list (2)', 18);
+  assert.equal(r.pic, 'muhamad gilang');
+  const after = plain(gas.saveCompletion({ sheet: r.sheet, row: r.row, expect: Object.assign(expectOf(r), { pic: r.pic }),
+    pic: 'Muhamad gilang, iqbal, Budi, Alvansa, Rina, iqbal' }));
+  assert.equal(geely.get('I18'), 'Muhamad gilang, iqbal, Budi, Alvansa, Rina'); // >4 nama, duplikat dibuang
+  assert.equal(after.pic, 'Muhamad gilang, iqbal, Budi, Alvansa, Rina');
+  geely.set('I18', 'orang lain');
+  assert.throws(() => gas.saveCompletion({ sheet: r.sheet, row: r.row, expect: Object.assign(expectOf(r), { pic: after.pic }), pic: 'iqbal' }),
+    /sudah berubah sejak daftar dimuat/);
 });

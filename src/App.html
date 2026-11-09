@@ -224,13 +224,13 @@
     var e1 = val(r, 'ROOT_CAUSE'), f1 = val(r, 'SOLUTION'), k1 = val(r, 'NOTES');
     var body = editing ? editForm(r, can) :
       '<div class="rec-body">' +
+        previewStrip(r) +
+        problemBox(r.description, val(r, 'DESC'), 'Masalah (D)') +
         biField('Machine (C)', val(r, 'MACHINE'), r.translated && r.machine) +
         '<div class="field"><div class="k">Discipline (H)</div><div class="v">' + disciplineSelect(r, can) + '</div></div>' +
-        biField('Deskripsi (D)', val(r, 'DESC'), r.translated && r.description, 'wide') +
         (e1 ? biField('Root Cause (E)', e1, '', 'wide') : '') +
         (f1 ? biField('Solution (F)', f1, '', 'wide') : '') +
         field('PIC (I)', val(r, 'PIC')) +
-        field('Level · Status', [r.level, r.lineStatus, r.handling].filter(Boolean).join(' · ')) +
         (k1 ? biField('Notes (K)', k1, '', 'wide notes-k') : '') +
       '</div>';
 
@@ -265,6 +265,45 @@
       : '<span class="zh">' + esc(value.slice(0, i)) + '</span><span class="en">' + esc(value.slice(i + 1)) + '</span>';
     return '<div class="field ' + (cls || '') + '"><div class="k">' + esc(label) + '</div><div class="v bi">' + shown +
       (original ? '<span class="orig">Asli: ' + esc(original) + '</span>' : '') + '</div></div>';
+  }
+
+  /** Deretan kotak info: [label, nilai, kelas]. Yang nilainya kosong tidak ditampilkan. */
+  function infoStrip(items) {
+    var shown = items.filter(function (i) { return i[1] !== '' && i[1] !== null && i[1] !== undefined; });
+    return shown.length ? '<div class="info-strip">' + shown.map(function (i) {
+      return '<div class="info ' + (i[2] || '') + '"><span class="lbl">' + esc(i[0]) + '</span><span class="val">' + esc(i[1]) + '</span></div>';
+    }).join('') + '</div>' : '';
+  }
+
+  /** Masalah: teks Bahasa Indonesia besar; isi sel (terjemahan) kecil di bawahnya. */
+  function problemBox(orig, cell, label) {
+    var main = orig || cell;
+    var tr = orig && cell && cell !== orig ? cell : '';
+    return '<div class="field wide"><div class="problem"><div class="lbl">' + esc(label) + '</div>' +
+      '<div class="txt">' + (main ? esc(main) : empty()) + '</div>' +
+      (tr ? '<div class="tr">' + esc(tr) + '</div>' : '') + '</div></div>';
+  }
+
+  /** Downtime di layar Periksa: dihitung ulang kalau jam selesai (G) diedit. */
+  function downtimeText(r) {
+    if (changed(r).hasOwnProperty('END_TIME')) {
+      var d = minutesBetween(r.start, String(val(r, 'END_TIME')).trim().replace('.', ':'));
+      return d !== null ? d + ' menit' : '?';
+    }
+    if (r.duration !== null && r.duration !== undefined) return r.duration + ' menit';
+    return r.durationText && r.durationText !== '-' ? r.durationText : '';
+  }
+
+  function previewStrip(r) {
+    return '<div class="field wide strip-slot">' + infoStrip([
+      ['Mulai', r.start],
+      ['Selesai', val(r, 'END_TIME')],
+      ['Downtime', downtimeText(r), 'accent'],
+      ['Lini / proses', r.process],
+      ['Status lini', r.lineStatus],
+      ['Penanganan', r.handling],
+      ['Level', r.level]
+    ]) + '</div>';
   }
 
   function disciplineSelect(r, can) {
@@ -350,6 +389,7 @@
   }
   function editForm(r, can) {
     return '<div class="rec-body edit-form">' +
+      previewStrip(r) +
       editText(r, 'MACHINE', 'Machine (C)', 2, r.machine) +
       editText(r, 'DESC', 'Deskripsi (D)', 3, r.description) +
       editText(r, 'ROOT_CAUSE', 'Root Cause (E)', 3) +
@@ -672,15 +712,21 @@
     var done = !r.need.length;
     var head =
       '<div class="rec-head static">' +
-        '<div class="when"><div class="time">No. ' + esc(r.no || '–') + '<span class="arrow">·</span>' + (r.date ? esc(r.date) : empty('tanggal ?')) +
-          (r.end ? ' ' + esc(r.end) : '') + '</div>' +
+        '<div class="when"><div class="time">No. ' + esc(r.no || '–') + '<span class="arrow">·</span>' + (r.date ? esc(r.date) : empty('tanggal ?')) + '</div>' +
           '<div class="meta">' + esc(r.sheet) + ' · baris ' + r.row + '</div></div>' +
         '<div class="tags">' + (done ? '<span class="tag green">✓ Lengkap</span>'
           : '<span class="tag">Perlu: ' + r.need.map(function (n) { return n.col; }).join(', ') + '</span>') +
           '<a class="tag outline" href="' + esc(rowUrl(state.cmp.url, r)) + '" target="_blank" rel="noopener">Buka di sheet ↗</a></div>' +
       '</div>';
-    var body = '<div class="rec-body">' + biField('Machine (C)', r.machine, r.machineOrig) +
-      biField('Deskripsi (D)', r.description, r.descOrig, 'wide') + field('PIC (I)', r.pic) + '</div>';
+    var calc = minutesBetween(r.start, r.end);
+    var down = r.downtime !== null && r.downtime !== undefined
+      ? r.downtime + ' menit' + (r.downtimeUnverified ? ' (belum diverifikasi)' : '')
+      : (calc !== null ? calc + ' menit' : '');
+    var strip = infoStrip([['Mulai', r.start], ['Selesai', r.end], ['Downtime', down, 'accent'],
+      ['Lini / proses', r.process], ['Status lini', r.lineStatus], ['Penanganan', r.handling]]);
+    var body = '<div class="rec-body">' + (strip ? '<div class="field wide">' + strip + '</div>' : '') +
+      problemBox(r.descOrig, r.description, 'Masalah (D)') +
+      biField('Machine (C)', r.machine, r.machineOrig) + field('PIC (I)', r.pic) + '</div>';
     var disc = isEmptyStr(r.discipline)
       ? '<div class="field"><label class="k">Discipline (H)</label><select class="cmp-input disc is-empty" data-name="discipline">' +
         '<option value="">— kosong —</option>' + state.cmp.disciplines.map(function (d) {
@@ -837,6 +883,7 @@
     }
     var r = state.preview.records.filter(function (x) { return x.id === id; })[0];
     art.querySelector('.foot-row .cells').innerHTML = emptyLine(r);
+    if (k === 'END_TIME') art.querySelector('.strip-slot').outerHTML = previewStrip(r);
     updateCounts();
   });
 

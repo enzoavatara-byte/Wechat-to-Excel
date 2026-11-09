@@ -80,6 +80,27 @@ function prepareEdits_(items, translate) {
   return items;
 }
 
+/**
+ * Jam selesai (G) / tanggal (J) yang diedit ikut dipakai untuk menghitung ulang durasi di Notes (K),
+ * supaya K tidak menunjukkan downtime lama. Tidak dilakukan kalau K sendiri diedit manual.
+ */
+function applyTimeEdits_(rec, cells) {
+  if (!cells || cells.hasOwnProperty('NOTES')) return;
+  var hasT = cells.hasOwnProperty('END_TIME'), hasD = cells.hasOwnProperty('DATE');
+  if (!hasT && !hasD) return;
+  if (hasD) {
+    var d = parseEditDate_(cells.DATE);
+    var sameDay = !rec.end.date || (rec.start.date && fmtDate_(rec.end.date) === fmtDate_(rec.start.date));
+    rec.start.date = d;
+    if (sameDay) rec.end.date = d;
+  }
+  if (hasT) rec.end.time = parseEditTime_(cells.END_TIME);
+  rec.warnings = rec.warnings.filter(function (w) {
+    return !/^⑨ tertulis|^⑧ lebih awal|^Durasi \d+ menit \(> 24 jam\)/.test(w.msg);
+  });
+  computeDuration_(rec);
+}
+
 /** Tombol "↻ Terjemahkan" di layar Periksa: pratinjau hasil satu sel tanpa menulis apa pun. */
 function translateCell(key, text) {
   if (EDIT_TEXT_KEYS.indexOf(key) === -1) throw new Error('Kolom ini tidak diterjemahkan.');

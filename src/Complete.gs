@@ -20,6 +20,43 @@ function normDate_(shown) {
   return fmtDate_({ y: d.getUTCFullYear(), m: d.getUTCMonth() + 1, d: d.getUTCDate() });
 }
 
+/**
+ * Jam mulai, downtime, jenis & status dari kolom K (Notes) yang ditulis tool, dalam format apa pun:
+ * "开始：18:05；影响时长：18分钟…\n(…Start: 18:05; Downtime: 18 min; …)" atau "Mulai: 18:05 | Durasi: 18 menit | …".
+ * Teks Bahasa Indonesia dari catatan sel K ("Asli (ID): … | Lini: Mesin pulih | …") didahulukan karena
+ * lebih mudah dibaca. Notes buatan manajer (teks bebas) -> semua kosong.
+ */
+function parseNotesInfo_(k, note) {
+  var s = String(k || '');
+  var n = String(note || '');
+  var pick = function (src, re) {
+    var m = re.exec(src);
+    var v = m ? m[1].trim() : '';
+    return v === '-' ? '' : v;
+  };
+  var first = function (re1, re2, re3) { return pick(n, re1) || pick(s, re2) || (re3 ? pick(s, re3) : ''); };
+  var down = pick(s, /(?:Downtime|Durasi)\s*:\s*(\d+)\s*(?:min|menit)/) || pick(s, /影响时长：\s*(\d+)\s*分钟/);
+  return {
+    start: pick(s, /(?:Start|Mulai)\s*:\s*(\d{1,2}:\d{2})/) || pick(s, /开始：\s*(\d{1,2}:\d{2})/),
+    downtime: down ? Number(down) : null,
+    unverified: /unverified|belum diverifikasi|未核实/.test(s),
+    type: first(/Jenis:\s*([^|\n]+)/, /Jenis:\s*([^|\n]+)/, /Type:\s*([^;)\n]+)/),
+    lineStatus: first(/Lini:\s*([^|\n]+)/, /Lini:\s*([^|\n]+)/, /Line status:\s*([^;)\n]+)/),
+    handling: first(/Penanganan:\s*([^|\n]+)/, /Penanganan:\s*([^|\n]+)/, /Handling:\s*([^;)\n]+)/)
+  };
+}
+
+function minutesOf_(s) {
+  var m = /^(\d{1,2}):(\d{2})$/.exec(String(s || '').trim());
+  return m ? +m[1] * 60 + +m[2] : null;
+}
+
+/** Downtime dari jam mulai & jam selesai (G) kalau bisa (G yang diedit tetap benar), selain itu dari K. */
+function rowDowntime_(start, end, fromNotes) {
+  var a = minutesOf_(start), b = minutesOf_(end);
+  return a !== null && b !== null && b >= a ? b - a : fromNotes;
+}
+
 /** Satu baris sheet sebagai objek untuk UI. `cur` = nilai tampilan B:K, `notes` = catatan B:K. */
 function completeRow_(name, sheetId, row, cur, notes) {
   var get = function (k) { return cur[COL[k] - COL.NO]; };
@@ -28,6 +65,8 @@ function completeRow_(name, sheetId, row, cur, notes) {
   var todo = function (k) { return isEmpty_(get(k)) || !hasChinese_(get(k)); };
   var need = ['ROOT_CAUSE', 'SOLUTION'].filter(todo);
   if (isEmpty_(get('DISCIPLINE'))) need.push('DISCIPLINE');
+  var info = parseNotesInfo_(get('NOTES'), note('NOTES'));
+  var machineSrc = splitMachine_(originalFromNote_(note('MACHINE')) || get('MACHINE'));
   return {
     sheet: name,
     sheetId: sheetId,
@@ -44,6 +83,13 @@ function completeRow_(name, sheetId, row, cur, notes) {
     end: get('END_TIME'),
     date: normDate_(get('DATE')),
     dateShown: get('DATE'),
+    start: info.start,
+    downtime: rowDowntime_(info.start, get('END_TIME'), info.downtime),
+    downtimeUnverified: info.unverified,
+    type: info.type,
+    lineStatus: info.lineStatus,
+    handling: info.handling,
+    process: machineSrc ? machineSrc.process : '',
     need: need.map(function (k) { return { key: k, col: colLetter_(COL[k]) }; })
   };
 }
@@ -78,7 +124,8 @@ function listIncomplete() {
     sheets: issueSheetNames_(ss),
     url: ss.getUrl(),
     translate: TRANSLATE,
-    disciplines: DISCIPLINES
+    disciplines: DISCIPLINES,
+    roster: picRoster_(ss)
   };
 }
 
@@ -100,7 +147,8 @@ function saveCompletion(item) {
     var data = readRows_(sh, row, 1);
     var cur = completeRow_(sh.getName(), sh.getSheetId(), row, data.vals[0], data.notes[0]);
     var exp = item.expect || {};
-    ['machine', 'description', 'rootCause', 'solution', 'discipline'].forEach(function (k) {
+    ['machine', 'description', 'rootCause', 'solution', 'discipline', 'pic'].forEach(function (k) {
+      if (k === 'pic' && !exp.hasOwnProperty('pic')) return; // PIC hanya dicek kalau UI mengirimnya
       if (String(exp[k] == null ? '' : exp[k]) !== cur[k]) {
         throw new Error('Baris ' + row + ' di "' + cur.sheet + '" sudah berubah sejak daftar dimuat. Klik "Muat ulang".');
       }
@@ -120,7 +168,10 @@ function saveCompletion(item) {
     } else {
       disc = '';
     }
-    if (!fields.length && !disc) throw new Error('Tidak ada yang diisi.');
+    // PIC dari pemilih: nama apa adanya (tidak diterjemahkan), digabung ", ".
+    var pic = item.pic == null ? null : splitPics_(item.pic).join(', ');
+    if (pic === cur.pic) pic = null;
+    if (!fields.length && !disc && pic === null) throw new Error('Tidak ada yang diisi.');
 
     // Terjemahkan dulu (kecuali yang sudah ditulis dengan huruf Mandarin), baru tulis.
     var toTranslate = TRANSLATE ? fields.filter(function (f) { return !hasChinese_(f.text); }) : [];
@@ -142,6 +193,7 @@ function saveCompletion(item) {
       sh.getRange(row, COL[f.key]).setValue(asText_(f.value)).setNote(f.note);
     });
     if (disc) sh.getRange(row, COL.DISCIPLINE).setValue(disc);
+    if (pic !== null) sh.getRange(row, COL.PIC).setValue(asText_(pic));
     SpreadsheetApp.flush();
 
     var after = readRows_(sh, row, 1);

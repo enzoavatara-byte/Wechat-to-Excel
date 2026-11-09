@@ -55,6 +55,10 @@ var DISCIPLINE_MAP = {
 // Tetap tampil di pratinjau supaya laporan yang salah label bisa dicentang manual.
 var SKIP_TYPES = ['changeover'];
 
+// Nama PIC tim (opsional), muncul sebagai pilihan di pemilih PIC walau belum pernah dipakai.
+// Nama yang sudah ada di kolom I (Responsibility) sheet issue mana pun otomatis ikut muncul.
+var PIC_NAMES = [];
+
 // ---------- Terjemahan (Translate.gs) ----------
 
 // true: C, D, K ditulis "中文\n(English)" seperti sheet manajer. false: Bahasa Indonesia apa adanya.

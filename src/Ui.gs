@@ -130,6 +130,7 @@ function getInitData() {
     }),
     disciplines: DISCIPLINES,
     headerRow: ROW.HEADER,
+    roster: picRoster_(ss),
     version: APP_VERSION
   };
 }

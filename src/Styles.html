@@ -121,6 +121,18 @@
   a.tag { text-decoration: none; }
   .ok-text { color: var(--ok); }
 
+  /* ---------- info laporan & masalah ---------- */
+  .info-strip { display: flex; flex-wrap: wrap; gap: 8px; }
+  .info { display: flex; flex-direction: column; gap: 1px; min-width: 88px; padding: 7px 12px; border-radius: 10px; background: var(--chip); }
+  .info .lbl { font-size: 10.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--faint); }
+  .info .val { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+  .info.accent { background: var(--warn-bg); }
+  .info.accent .val { color: var(--warn); }
+  .problem { border-left: 4px solid var(--primary); background: var(--primary-weak); border-radius: 8px; padding: 10px 14px; }
+  .problem .lbl { font-size: 11px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--primary); margin-bottom: 3px; }
+  .problem .txt { font-size: 17px; font-weight: 600; line-height: 1.4; white-space: pre-line; overflow-wrap: anywhere; }
+  .problem .tr { margin-top: 6px; font-size: 13px; color: var(--muted); white-space: pre-line; overflow-wrap: anywhere; }
+
   /* ---------- edit isi sel (layar Periksa) ---------- */
   .foot-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
   .foot-actions { display: flex; gap: 8px; margin-left: auto; }
@@ -255,6 +267,8 @@
     .tags { margin-left: 34px; justify-content: flex-start; width: 100%; }
     .rec-head.static .tags { margin-left: 0; }
     .edit-row { grid-template-columns: 1fr 1fr; }
+    .info { min-width: 0; flex: 1 1 40%; }
+    .problem .txt { font-size: 16px; }
     .rec-body { grid-template-columns: 1fr; padding-left: 16px; }
     .rec-foot { padding-left: 16px; }
     .kbd-hint { display: none; }

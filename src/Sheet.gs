@@ -25,6 +25,48 @@ function issueSheetNames_(ss) {
   return ss.getSheets().filter(isIssueSheet_).map(function (sh) { return sh.getName(); });
 }
 
+// ---------- Daftar PIC ----------
+
+/** "a, b; c" -> ['a', 'b', 'c'] (tanpa duplikat, huruf besar/kecil diabaikan). */
+function splitPics_(s) {
+  var seen = {};
+  return String(s || '').split(/\s*[,;、\n]\s*/).map(function (n) { return n.replace(/\s+/g, ' ').trim(); })
+    .filter(function (n) {
+      var k = n.toLowerCase();
+      if (!n || isBlank_(n) || seen[k]) return false;
+      seen[k] = true;
+      return true;
+    });
+}
+
+/**
+ * Nama untuk pemilih PIC: PIC_NAMES (Config) + semua nama di kolom I sheet issue, paling sering dipakai
+ * dulu. Nama yang sama dengan huruf besar/kecil berbeda digabung (ejaan yang paling sering dipakai menang).
+ */
+function picRoster_(ss) {
+  var count = {};
+  var forms = {};
+  var add = function (name, weight, used) {
+    var k = name.toLowerCase();
+    if (!forms[k]) { forms[k] = {}; count[k] = 0; }
+    forms[k][name] = (forms[k][name] || 0) + weight;
+    count[k] += used;
+  };
+  PIC_NAMES.forEach(function (n) { splitPics_(n).forEach(function (x) { add(x, 1000, 0); }); });
+  issueSheetNames_(ss).forEach(function (name) {
+    var sh = ss.getSheetByName(name);
+    var last = sh.getLastRow();
+    if (last < ROW.DATA_START) return;
+    sh.getRange(ROW.DATA_START, COL.PIC, last - ROW.DATA_START + 1, 1).getDisplayValues().forEach(function (r) {
+      splitPics_(r[0]).forEach(function (x) { add(x, 1, 1); });
+    });
+  });
+  return Object.keys(forms).map(function (k) {
+    var best = Object.keys(forms[k]).sort(function (a, b) { return forms[k][b] - forms[k][a]; })[0];
+    return { name: best, count: count[k] };
+  }).sort(function (a, b) { return b.count - a.count || a.name.toLowerCase().localeCompare(b.name.toLowerCase()); });
+}
+
 // ---------- Rute proyek ----------
 
 // Kode proyek untuk sheet yang dibuat lewat menu "Buat sheet baru" disimpan sebagai developer
@@ -303,6 +345,8 @@ function toView_(r) {
     duration: r.duration,
     durationText: durationText_(r),
     level: r.level,
+    project: r.project,
+    process: r.process,
     machine: r.machine,
     description: r.description,
     type: r.type,
@@ -349,6 +393,7 @@ function importWeChat(text, otherSheet, picks, opts) {
     try {
       if (wantTranslate_(opts)) translateRecords_(items.map(function (it) { return it.rec; }));
       prepareEdits_(items, wantTranslate_(opts));
+      items.forEach(function (it) { if (!it.error) applyTimeEdits_(it.rec, it.cells); });
     } catch (e) {
       throw new Error('Terjemahan gagal, tidak ada yang ditulis: ' + (e.message || e) + '. Coba lagi, atau lanjut tanpa terjemahan.');
     }
