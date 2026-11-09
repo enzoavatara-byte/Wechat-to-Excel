@@ -11,7 +11,7 @@
  */
 var APP_NAME = 'WeChat Import';
 // Diisi otomatis oleh `npm run build` (dist/). Tampil di UI & setup untuk memastikan kode terbaru yang jalan.
-var APP_VERSION = '2034eef';
+var APP_VERSION = '3cff90a';
 
 // Struktur sheet manajer: header di baris 8, data mulai baris 9.
 var ROW = {
@@ -530,7 +530,7 @@ function timeSerial_(t) {
  * terjemahan mesin keliru, dan tetap dipakai untuk deteksi duplikat.
  */
 var NOTE_PREFIX = 'Asli (ID): ';
-var TRANSLATE_CHUNK_CHARS = 4000;
+var TRANSLATE_CHUNK_CHARS = 1800; // per panggilan; dijaga tetap jauh di bawah batas ±5.000 karakter, termasuk tag HTML
 
 function wantTranslate_(opts) {
   return TRANSLATE && !(opts && opts.translate === false);
@@ -581,7 +581,7 @@ function fixZh_(s) {
 /**
  * Terjemahkan array teks (boleh multi-baris), hemat kuota Google Translate:
  * 1. Baris yang pernah diterjemahkan (6 jam terakhir) diambil dari cache, tanpa panggilan.
- * 2. Sisanya dikirim sekaligus per potongan ±4.000 karakter (satu panggilan per bahasa).
+ * 2. Sisanya dikirim sekaligus per potongan ±1.800 karakter (satu panggilan per bahasa untuk paste biasa).
  *    Kalau jumlah baris hasil tidak cocok, diulang SEKALI dalam mode HTML (tiap baris = <p>),
  *    baru kalau masih tidak cocok per baris dengan jeda (bukan beruntun).
  * 3. Kena batas per menit -> tunggu lalu coba lagi. Kuota harian habis -> pakai rumus
@@ -655,13 +655,13 @@ function chunkLines_(lines, max) {
   var cur = [];
   var size = 0;
   lines.forEach(function (l) {
-    if (cur.length && size + l.length + 1 > max) {
+    if (cur.length && size + l.length + 8 > max) {
       chunks.push(cur);
       cur = [];
       size = 0;
     }
     cur.push(l);
-    size += l.length + 1;
+    size += l.length + 8; // + "\n" atau "<p></p>" kalau diulang dalam mode HTML
   });
   if (cur.length) chunks.push(cur);
   return chunks;
@@ -996,6 +996,25 @@ function findNextRow(sh, fromRow) {
   return Math.max(last + 1, start);
 }
 
+/**
+ * Siapkan baris `row` sebelum ditulis:
+ * - Sheet Google punya jumlah baris tetap (mis. 1.000). Kalau `row` di luar itu, baris ditambah dulu
+ *   (tanpa ini Google menolak: "coordinates ... outside the dimensions of the sheet").
+ * - Tabel template/manajer hanya berbingkai + ber-dropdown H sampai baris 35. Baris di bawahnya
+ *   menyalin format & dropdown baris di atasnya, jadi tabel ikut memanjang seiring data bertambah.
+ */
+function prepareRow_(sh, row) {
+  var max = sh.getMaxRows();
+  if (row > max) sh.insertRowsAfter(max, Math.max(row - max, 50));
+  if (row <= ROW.DATA_START) return;
+  if (sh.getRange(row, COL.DISCIPLINE).getDataValidation() || !sh.getRange(row - 1, COL.DISCIPLINE).getDataValidation()) return;
+  var width = COL.NOTES - COL.NO + 1;
+  var src = sh.getRange(row - 1, COL.NO, 1, width);
+  var dst = sh.getRange(row, COL.NO, 1, width);
+  src.copyTo(dst, SpreadsheetApp.CopyPasteType.PASTE_FORMAT, false);
+  src.copyTo(dst, SpreadsheetApp.CopyPasteType.PASTE_DATA_VALIDATION, false);
+}
+
 /** Nomor urut lanjutan = angka terbesar di kolom B di atas `row` + 1. */
 function nextNumber_(sh, row) {
   var n = row - ROW.DATA_START;
@@ -1034,6 +1053,7 @@ function asText_(v) {
  * Mengembalikan nilai akhir yang ditulis (sebelum awalan ').
  */
 function writeRecord(sh, row, rec, override) {
+  prepareRow_(sh, row);
   var out = buildRow_(rec);
   if (override) {
     Object.keys(override.values).forEach(function (k) { out.values[k] = override.values[k]; });

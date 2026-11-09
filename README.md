@@ -187,7 +187,9 @@ Yang **tidak** bisa sama persis:
 ikut hilang). Kolom yang masih harus dilengkapi tampil di layar Periksa, layar Selesai, dan teks pertanyaan mentor.
 
 - **Sheet tujuan:** proyek di `PROJECT_SHEET` (E245 → `Geely list (2)`); proyek lain → sheet yang dipilih di UI.
-- **Baris tujuan:** baris pertama mulai baris 9 yang **C dan D-nya kosong**.
+- **Baris tujuan:** baris pertama mulai baris 9 yang **C dan D-nya kosong**. Kalau sheet kehabisan baris, baris
+  ditambah otomatis; baris di bawah tabel template (setelah baris 35) menyalin format & dropdown H dari baris di atasnya.
+- **Jumlah data:** tidak dibatasi tool. Paste besar ditulis bertahap (15 laporan per proses Apps Script).
 - **Urutan:** dari jam kejadian (tanggal + jam ④) paling awal. Laporan tanpa ④ yang valid ditaruh paling akhir.
 - **Durasi** selalu dihitung ulang dari ④ → ⑧. Kalau beda dengan ⑨ → peringatan. Lewat tengah malam ditangani.
 - Teks di C/D/I yang diawali `=` `+` `-` `@` atau mirip angka diberi awalan `'` (tidak terlihat), supaya
@@ -280,6 +282,8 @@ Field yang gagal terbaca **dikosongkan**, dan teks aslinya dicatat di catatan se
 | Gejala | Penyebab paling mungkin | Solusi |
 |---|---|---|
 | "The data you entered in cell H… violates the data validation rules" saat **Terjemahkan sel terpilih** | Bug versi sebelum `e3b0860`: menu ikut menerjemahkan H (dropdown) | Copy ulang `dist/Code.gs`. Kalau sebagian sel sempat berubah, cek catatan sel "Asli (ID): …" atau pakai Edit → Undo / Version history. Kalau I2:I5 (sumber dropdown) sempat ikut diterjemahkan, kembalikan ke Machine / Operation / Product Item / MES; `setup` akan menandai `✗` kalau masih beda |
+| **Data tidak masuk saat sheet sudah banyak isinya** ("coordinates of the range are outside the dimensions of the sheet", atau data muncul di bawah tabel tanpa garis) | Versi lama menulis ke baris di luar jumlah baris sheet, dan baris setelah tabel template (baris 35) tidak berformat | Versi baru menambah baris otomatis dan menyalin format + dropdown H dari baris di atasnya, jadi tabel ikut memanjang. Tidak ada batas jumlah data dari tool |
+| **"Exceeded maximum execution time"** saat impor banyak laporan | Satu proses Apps Script maksimal 6 menit | Versi baru menulis bertahap 15 laporan per proses (tombol menampilkan "Menulis 15 / 40…"). Kalau tetap berhenti di tengah, yang sudah tertulis ditampilkan; paste ulang teks yang sama, yang sudah masuk ditandai duplikat |
 | **"Service invoked too many times …: translate"** | Kuota Google Translate (LanguageApp). *"in a short time"* = batas per menit; *"for one day"* = kuota harian akun (±5.000 panggilan untuk Gmail) | Versi `2034eef` ke atas: batas per menit dicoba ulang otomatis, kuota harian beralih ke rumus `GOOGLETRANSLATE`. Kalau keduanya gagal: tunggu ±24 jam sejak panggilan pertama hari itu, atau *Lanjut tanpa terjemahan* lalu terjemahkan nanti lewat tab **Lengkapi** / menu. Baris `Panggilan Google Translate hari ini` di `setup` menunjukkan seberapa dekat ke batas |
 | **Tidak berubah setelah copy ulang kode** | (1) Web app `/exec` masih memakai versi deployment lama; (2) file lama dari `src/` (Config, Parser, Sheet, Ui, App, Styles) masih ada di proyek dan menimpa `Code.gs`; (3) editor belum disimpan / tab spreadsheet belum di-reload; (4) laporan yang sama di-paste ulang → ditandai duplikat & tidak dicentang, baris lama tidak berubah sendiri | Cek **versi** di kepala halaman (dan baris `Versi kode` di `setup`) = versi di `dist/Code.gs` (`APP_VERSION`). Web app: Deploy → Manage deployments → pensil → **New version**. Hapus semua file selain `Code.gs`, `Index`, `appsscript.json`. Simpan (Ctrl+S), reload tab. Baris lama hasil uji: hapus isi C:K lalu impor ulang |
 | Ragu setup sudah benar | – | **WeChat Import → Cek setup** (atau Run `setup`): semua baris harus `✓` |
@@ -311,6 +315,7 @@ npm run build   # buat ulang dist/ setelah mengubah src/
   Discipline di luar dropdown).
 - `test/edit.test.js`: *✎ Edit isi sel* (teks Mandarin apa adanya, teks Indonesia diterjemahkan termasuk format C,
   E/F saat impor, validasi G/J, C & D kosong ditolak, terjemahan gagal → tidak menulis, tombol ↻).
+- `test/capacity.test.js`: data banyak (sheet kehabisan baris, tabel template penuh, paste 120 laporan).
 - `test/template.test.js`: menu *Buat sheet baru* (isi & struktur sama dengan file manajer, Revision_History,
   rute kode proyek termasuk rename/hapus sheet, nama/kode dobel ditolak, spreadsheet kosong).
 - `test/dist.test.js`: `dist/` harus sama dengan hasil build dari `src/` (gagal kalau lupa `npm run build`),

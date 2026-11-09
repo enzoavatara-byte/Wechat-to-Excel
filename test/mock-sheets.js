@@ -89,6 +89,18 @@ class MockRange {
   getNumRows() { return this.nr; }
   getNumColumns() { return this.nc; }
   getCell(i, j) { return new MockRange(this.sheet, this.row + i - 1, this.col + j - 1); }
+  copyTo(dst, type) {
+    this.each((r, c, i, j) => {
+      const from = this.sheet.cell(r, c);
+      const tr = dst.row + i, tc = dst.col + j;
+      if (type === 'PASTE_FORMAT') Object.assign(dst.sheet.cell(tr, tc), { s: from.s && Object.assign({}, from.s), f: from.f, bg: from.bg });
+      if (type === 'PASTE_DATA_VALIDATION') {
+        const v = this.sheet.validations.get(r + ',' + c);
+        if (v) dst.sheet.validations.set(tr + ',' + tc, v); else dst.sheet.validations.delete(tr + ',' + tc);
+      }
+    });
+    return this;
+  }
   setDataValidation(rule) { this.each((r, c) => { this.sheet.validations.set(r + ',' + c, rule); }); return this; }
   setFormula(f) { return this.setValue(f); }
   style(key, v) { this.each((r, c) => { const x = this.sheet.cell(r, c); x.s = Object.assign({}, x.s, { [key]: v }); }); return this; }
@@ -118,6 +130,13 @@ class MockSheet {
     this.meta = [];
     this.cfRules = [];
     this.props = {};
+    this.maxRows = 1000; // seperti Google: jumlah baris tetap, ditambah lewat insertRowsAfter
+  }
+  getMaxRows() { return this.maxRows; }
+  insertRowsAfter(after, n) {
+    if (after !== this.maxRows) throw new Error('mock hanya mendukung tambah baris di akhir');
+    this.maxRows += n;
+    return this;
   }
   cell(r, c) {
     const k = r + ',' + c;
@@ -146,6 +165,9 @@ class MockSheet {
   }
   getRange(r, c, nr, nc) {
     if (typeof r === 'string') [r, c, nr, nc] = parseRange(r);
+    if (r < 1 || r + (nr || 1) - 1 > this.maxRows) {
+      throw new Error('The coordinates of the range are outside the dimensions of the sheet.');
+    }
     return new MockRange(this, r, c, nr, nc);
   }
   setColumnWidth(c, w) { this.colWidths[c] = w; return this; }
@@ -278,6 +300,7 @@ function services(ss) {
       getActiveRange: () => ss.activeRange || null,
       flush() {},
       DataValidationCriteria: { VALUE_IN_LIST: 'VALUE_IN_LIST', VALUE_IN_RANGE: 'VALUE_IN_RANGE' },
+      CopyPasteType: { PASTE_FORMAT: 'PASTE_FORMAT', PASTE_DATA_VALIDATION: 'PASTE_DATA_VALIDATION' },
       newDataValidation() {
         const rule = { allowInvalid: true };
         const b = {
