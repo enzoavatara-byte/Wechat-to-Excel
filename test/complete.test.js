@@ -42,7 +42,6 @@ test('daftar: baris hasil impor dengan E/F kosong muncul, terbaru dulu, dengan t
   // Baris lama manajer: J nomor seri berformat General ("46310") ditampilkan & diurutkan sebagai tanggal.
   const old = find(list, 'Geely list (2)', 17);
   assert.equal(old.date, '2026/10/15');
-  assert.equal(old.dateShown, '46310');
   assert.ok(list.rows.indexOf(old) > list.rows.indexOf(r));
 });
 

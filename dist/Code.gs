@@ -11,7 +11,7 @@
  */
 var APP_NAME = 'WeChat Import';
 // Diisi otomatis oleh `npm run build` (dist/). Tampil di UI & setup untuk memastikan kode terbaru yang jalan.
-var APP_VERSION = 'dcd5e37';
+var APP_VERSION = 'c12d38a';
 
 // Struktur sheet manajer: header di baris 8, data mulai baris 9.
 var ROW = {
@@ -40,7 +40,8 @@ var HEADER_CHECK = ['No.', 'Machine', 'Issue Description'];
 // Proyek (②) -> nama sheet tujuan. Kunci: huruf besar, tanpa spasi/strip ("e-245" -> "E245").
 // Proyek yang tidak ada di sini masuk ke sheet yang dipilih di UI.
 var PROJECT_SHEET = {
-  'E245': 'Geely list (2)'
+  'E245': 'Geely list (2)',
+  'DJ2518': 'Limo list (2)'   // B4 sheet itu: "DJ2518 – VFLimo7"; juga cocok untuk ② "DJ2518 - VFLimo7"
 };
 
 // Isi dropdown kolom H. Harus sama persis dengan daftar di sheet (I2:I5).
@@ -1278,20 +1279,36 @@ function dropdownValues_(sh) {
  * Kunci (Machine|Deskripsi|End Time|Date seperti tampil di sheet) -> nomor baris.
  * Untuk C/D yang sudah diterjemahkan, dipakai teks asli dari catatan sel ("Asli (ID): …").
  */
+/**
+ * Tanggal J sebagai "yyyy/mm/dd" apa pun format tampilannya. Sel tanggal asli (mis. tampil "11/1/2026"
+ * di spreadsheet ber-locale US) dibaca dari nilainya, bukan ditebak dari teksnya; angka seri lama lewat
+ * normDate_; selain itu apa adanya. `shown` = nilai tampilan kolom J untuk baris yang sama.
+ */
+function dateTexts_(sh, from, n, shown) {
+  var tz = ss_().getSpreadsheetTimeZone();
+  return sh.getRange(from, COL.DATE, n, 1).getValues().map(function (r, i) {
+    var v = r[0];
+    if (Object.prototype.toString.call(v) === '[object Date]' && !isNaN(v.getTime())) return Utilities.formatDate(v, tz, 'yyyy/MM/dd');
+    return normDate_(shown[i]);
+  });
+}
+
 function existingKeys_(sh) {
   var keys = {};
   var last = sh.getLastRow();
   if (last < ROW.DATA_START) return keys;
   var first = Math.min(COL.MACHINE, COL.DESC, COL.END_TIME, COL.DATE);
   var width = Math.max(COL.MACHINE, COL.DESC, COL.END_TIME, COL.DATE) - first + 1;
-  var range = sh.getRange(ROW.DATA_START, first, last - ROW.DATA_START + 1, width);
+  var n = last - ROW.DATA_START + 1;
+  var range = sh.getRange(ROW.DATA_START, first, n, width);
   var vals = range.getDisplayValues();
   var notes = range.getNotes();
+  var dates = dateTexts_(sh, ROW.DATA_START, n, vals.map(function (v) { return v[COL.DATE - first]; }));
   vals.forEach(function (v, i) {
     var c = v[COL.MACHINE - first], d = v[COL.DESC - first];
     if (isEmpty_(c) && isEmpty_(d)) return;
     var orig = function (col, shown) { return originalFromNote_(notes[i][col - first]) || shown; };
-    var key = recordKey_(orig(COL.MACHINE, c), orig(COL.DESC, d), v[COL.END_TIME - first], v[COL.DATE - first]);
+    var key = recordKey_(orig(COL.MACHINE, c), orig(COL.DESC, d), v[COL.END_TIME - first], dates[i]);
     if (!keys.hasOwnProperty(key)) keys[key] = ROW.DATA_START + i;
   });
   return keys;
@@ -1310,8 +1327,10 @@ function previewWeChat(text, otherSheet, opts) {
   var other = issueSheet_(ss, otherSheet).getName();
   var recs = parseReports(text);
   var routes = projectRoutes_(ss);
+  var deleted = deletedKeys_(ss);
   var info = {};
   recs.forEach(function (r) {
+    if (deleted.hasOwnProperty(r.key)) r.deletedBefore = deleted[r.key];
     var name = targetSheetName_(r, other, routes);
     if (!info[name]) info[name] = sheetInfo_(ss, name);
     r.sheet = name;
@@ -1395,12 +1414,13 @@ function toView_(r) {
     skip: r.skip,
     writable: r.writable,
     duplicateOf: r.duplicateOf || null,
+    deletedBefore: r.deletedBefore || null, // pernah dihapus lewat tool (WeChat_Deleted)
     translated: !!r.tr,
     // K tanpa pelapor: UI menambahkan pelapor yang dipilih dengan aturan yang sama (withReporter_).
     cells: { C: row.values.MACHINE, D: row.values.DESC, K: row.notesBase },
     empty: row.empty.map(function (k) { return { key: k, col: colLetter_(COL[k]) }; }),
     warnings: r.warnings.map(function (w) { return { col: w.col ? colLetter_(COL[w.col]) : '', msg: w.msg }; }),
-    include: r.writable && !r.sheetError && !r.skip && !r.duplicateOf
+    include: r.writable && !r.sheetError && !r.skip && !r.duplicateOf && !r.deletedBefore
   };
 }
 
@@ -1839,7 +1859,8 @@ function completeRow_(name, sheetId, row, cur, notes) {
   var get = function (k) { return cur[COL[k] - COL.NO]; };
   var note = function (k) { return notes[COL[k] - COL.NO]; };
   // E/F perlu dikerjakan kalau kosong, atau berisi teks Indonesia yang belum diterjemahkan.
-  var todo = function (k) { return isEmpty_(get(k)) || !hasChinese_(get(k)); };
+  // "-" / "-\n(-)" = sengaja tidak ada (mis. masalah operasi) -> dianggap terisi.
+  var todo = function (k) { var v = get(k); return isEmpty_(v) || (!hasChinese_(v) && !/^[\s\-\u2013\u2014()\/.]+$/.test(v)); };
   var need = ['ROOT_CAUSE', 'SOLUTION'].filter(todo);
   if (isEmpty_(get('DISCIPLINE'))) need.push('DISCIPLINE');
   var info = parseNotesInfo_(get('NOTES'), note('NOTES'));
@@ -1859,7 +1880,6 @@ function completeRow_(name, sheetId, row, cur, notes) {
     discipline: get('DISCIPLINE'),
     end: get('END_TIME'),
     date: normDate_(get('DATE')),
-    dateShown: get('DATE'),
     start: info.start,
     downtime: rowDowntime_(info.start, get('END_TIME'), info.downtime),
     downtimeUnverified: info.unverified,
@@ -1872,9 +1892,13 @@ function completeRow_(name, sheetId, row, cur, notes) {
   };
 }
 
+/** Nilai tampilan B:K (tanggal J sudah dinormalkan ke yyyy/mm/dd, lihat dateTexts_) + catatan sel B:K. */
 function readRows_(sh, from, n) {
   var range = sh.getRange(from, COL.NO, n, COL.NOTES - COL.NO + 1);
-  return { vals: range.getDisplayValues(), notes: range.getNotes() };
+  var vals = range.getDisplayValues();
+  var j = COL.DATE - COL.NO;
+  dateTexts_(sh, from, n, vals.map(function (v) { return v[j]; })).forEach(function (d, i) { vals[i][j] = d; });
+  return { vals: vals, notes: range.getNotes() };
 }
 
 /** Baris (C atau D terisi) yang E/F/H-nya belum lengkap, dari semua sheet issue. Terbaru dulu. */
@@ -1979,6 +2003,115 @@ function saveCompletion(item) {
   } finally {
     lock.releaseLock();
   }
+}
+
+// ---------- Hapus baris (laporan yang tidak seharusnya di-upload) ----------
+
+// Sheet tersembunyi berisi salinan setiap baris yang dihapus lewat tool: jejak untuk manajer, bisa
+// disalin balik kalau salah hapus, dan dipakai pratinjau untuk menandai laporan yang pernah dihapus.
+var DELETED_SHEET = 'WeChat_Deleted';
+var DELETED_HEADERS = ['Dihapus pada', 'Sheet', 'Baris', 'No.', 'Machine', 'Issue Description', 'Root Cause', 'Solution',
+  'End Time', 'Discipline', 'Responsibility', 'Date', 'Notes', 'Catatan sel Notes', 'Machine asli', 'Deskripsi asli', 'Kunci duplikat'];
+
+function deletedLog_(ss, create) {
+  var sh = ss.getSheetByName(DELETED_SHEET);
+  if (!sh && create) {
+    sh = ss.insertSheet(DELETED_SHEET, ss.getSheets().length);
+    sh.getRange(1, 1, 1, DELETED_HEADERS.length).setValues([DELETED_HEADERS]).setFontWeight('bold');
+    sh.setFrozenRows(1);
+    sh.hideSheet();
+  }
+  return sh;
+}
+
+/** Kunci duplikat (format existingKeys_) -> { at, sheet } untuk laporan yang pernah dihapus lewat tool. */
+function deletedKeys_(ss) {
+  var sh = deletedLog_(ss, false);
+  var out = {};
+  if (!sh || sh.getLastRow() < 2) return out;
+  var n = DELETED_HEADERS.length;
+  sh.getRange(2, 1, sh.getLastRow() - 1, n).getDisplayValues().forEach(function (r) {
+    if (r[n - 1]) out[r[n - 1]] = { at: r[0], sheet: r[1] };
+  });
+  return out;
+}
+
+/**
+ * Hapus satu baris laporan. item = { sheet, row, expect: { machine, description } }: kalau isi baris
+ * sudah berubah sejak dimuat (mis. baris bergeser), tidak ada yang dihapus.
+ * - Baris dihapus utuh (baris di bawahnya naik), jadi tidak ada lubang yang nanti terisi laporan lain.
+ * - No. laporan lain tidak diubah (lihat komentar di bawah).
+ * - Salinan baris + kunci duplikatnya disimpan di sheet tersembunyi WeChat_Deleted.
+ */
+function deleteIssueRow(item) {
+  item = item || {};
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(LOCK_TIMEOUT_MS)) throw new Error('Masih ada proses lain yang berjalan. Coba lagi beberapa detik.');
+  try {
+    var ss = ss_();
+    var sh = issueSheet_(ss, item.sheet);
+    var row = Number(item.row);
+    if (!(row >= ROW.DATA_START) || row !== Math.floor(row) || row > sh.getLastRow()) throw new Error('Nomor baris tidak valid.');
+    var data = readRows_(sh, row, 1);
+    var v = data.vals[0], n = data.notes[0];
+    var cur = completeRow_(sh.getName(), sh.getSheetId(), row, v, n);
+    var exp = item.expect || {};
+    if (String(exp.machine == null ? '' : exp.machine) !== cur.machine ||
+        String(exp.description == null ? '' : exp.description) !== cur.description) {
+      throw new Error('Baris ' + row + ' di "' + cur.sheet + '" sudah berubah sejak daftar dimuat. Muat ulang dulu; tidak ada yang dihapus.');
+    }
+    if (isEmpty_(cur.machine) && isEmpty_(cur.description)) throw new Error('Baris ' + row + ' kosong; tidak ada yang dihapus.');
+
+    var origC = originalFromNote_(n[COL.MACHINE - COL.NO]) || '';
+    var origD = originalFromNote_(n[COL.DESC - COL.NO]) || '';
+    var key = recordKey_(origC || cur.machine, origD || cur.description, cur.end, cur.date);
+    var at = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy/MM/dd HH:mm');
+    var log = deletedLog_(ss, true);
+    var to = log.getLastRow() + 1;
+    if (to > log.getMaxRows()) log.insertRowsAfter(log.getMaxRows(), 100);
+    var copy = [at, sh.getName(), row].concat(v.slice(0, COL.NOTES - COL.NO + 1), [n[COL.NOTES - COL.NO], origC, origD, key]);
+    // Teks disimpan sebagai teks (jam/tanggal tidak diubah Sheets jadi angka), nomor baris tetap angka.
+    log.getRange(to, 1, 1, copy.length).setValues([copy.map(function (x) { return typeof x === 'string' ? asText_(x) : x; })]);
+
+    var noCell = sh.getRange(row, COL.NO);
+    var no = noCell.getValue();
+    var renumber = typeof no === 'number' && !noCell.getFormulas()[0][0];
+    sh.deleteRow(row);
+    // No. dipakai sebagai ID (di sheet asli sudah tidak berurutan), jadi nomor laporan lain TIDAK diubah.
+    // Hanya kalau yang dihapus laporan terakhir: nomor siap-pakai di bawahnya (tanpa isi) dimundurkan,
+    // supaya laporan berikutnya memakai nomor yang dihapus (mis. salah impor lalu dihapus).
+    var renumbered = renumber && !hasDataFrom_(sh, row) ? renumberBelow_(sh, row, no) : 0;
+    SpreadsheetApp.flush();
+    return { sheet: cur.sheet, sheetId: cur.sheetId, row: row, no: cur.no, renumbered: renumbered, log: DELETED_SHEET };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/** Ada baris berisi (C atau D) mulai baris `from`? */
+function hasDataFrom_(sh, from) {
+  var last = sh.getLastRow();
+  if (last < from) return false;
+  return sh.getRange(from, COL.MACHINE, last - from + 1, 2).getValues().some(function (r) {
+    return !isEmpty_(r[0]) || !isEmpty_(r[1]);
+  });
+}
+
+/** Setelah baris bernomor `no` dihapus: No. berupa angka > no mulai baris `from` dikurangi 1. Rumus dibiarkan. */
+function renumberBelow_(sh, from, no) {
+  var last = sh.getLastRow();
+  if (last < from) return 0;
+  var range = sh.getRange(from, COL.NO, last - from + 1, 1);
+  var vals = range.getValues();
+  var formulas = range.getFormulas();
+  var changed = 0;
+  var out = vals.map(function (r, i) {
+    if (formulas[i][0]) return [formulas[i][0]];
+    if (typeof r[0] === 'number' && r[0] > no) { changed++; return [r[0] - 1]; }
+    return [r[0]];
+  });
+  if (changed) range.setValues(out);
+  return changed;
 }
 
 // ======================= Dashboard.gs =======================

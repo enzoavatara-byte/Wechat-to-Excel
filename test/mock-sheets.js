@@ -151,6 +151,22 @@ class MockSheet {
   set(a1, v) { const [r, c] = parseA1(a1); this.cell(r, c).v = v; return this; }
   getName() { return this.name; }
   getSheetId() { return this.id; }
+  /** Seperti Google: baris dihapus utuh, baris di bawahnya naik satu (isi, catatan, dropdown). */
+  deleteRow(r) {
+    const shift = (map) => {
+      const out = new Map();
+      for (const [k, x] of map) {
+        const [rr, cc] = k.split(',').map(Number);
+        if (rr !== r) out.set((rr > r ? rr - 1 : rr) + ',' + cc, x);
+      }
+      return out;
+    };
+    this.cells = shift(this.cells);
+    this.validations = shift(this.validations);
+    this.maxRows -= 1;
+    return this;
+  }
+  isSheetHidden() { return !!this.props.hidden; }
   hideSheet() { this.props.hidden = true; return this; }
   /** Rumus =GOOGLETRANSLATE(A1,"id","en") dihitung lewat penerjemah palsu spreadsheet (kalau ada). */
   evaluate(x) {
@@ -293,7 +309,13 @@ function services(ss) {
       DigestAlgorithm: { MD5: 'md5' },
       Charset: { UTF_8: 'utf8' },
       computeDigest(alg, text) { return Array.from(crypto.createHash('md5').update(String(text), 'utf8').digest()); },
-      base64Encode(bytes) { return Buffer.from(bytes.map((b) => b & 255)).toString('base64'); }
+      base64Encode(bytes) { return Buffer.from(bytes.map((b) => b & 255)).toString('base64'); },
+      // Cukup untuk 'yyyy/MM/dd HH:mm' (Asia/Shanghai = UTC+8).
+      formatDate(d, tz, fmt) {
+        const x = new Date(d.getTime() + 8 * 3600000);
+        return fmt.replace('yyyy', x.getUTCFullYear()).replace('MM', pad(x.getUTCMonth() + 1)).replace('dd', pad(x.getUTCDate()))
+          .replace('HH', pad(x.getUTCHours())).replace('mm', pad(x.getUTCMinutes()));
+      }
     },
     SpreadsheetApp: {
       getActiveSpreadsheet: () => ss,

@@ -265,20 +265,36 @@ function dropdownValues_(sh) {
  * Kunci (Machine|Deskripsi|End Time|Date seperti tampil di sheet) -> nomor baris.
  * Untuk C/D yang sudah diterjemahkan, dipakai teks asli dari catatan sel ("Asli (ID): …").
  */
+/**
+ * Tanggal J sebagai "yyyy/mm/dd" apa pun format tampilannya. Sel tanggal asli (mis. tampil "11/1/2026"
+ * di spreadsheet ber-locale US) dibaca dari nilainya, bukan ditebak dari teksnya; angka seri lama lewat
+ * normDate_; selain itu apa adanya. `shown` = nilai tampilan kolom J untuk baris yang sama.
+ */
+function dateTexts_(sh, from, n, shown) {
+  var tz = ss_().getSpreadsheetTimeZone();
+  return sh.getRange(from, COL.DATE, n, 1).getValues().map(function (r, i) {
+    var v = r[0];
+    if (Object.prototype.toString.call(v) === '[object Date]' && !isNaN(v.getTime())) return Utilities.formatDate(v, tz, 'yyyy/MM/dd');
+    return normDate_(shown[i]);
+  });
+}
+
 function existingKeys_(sh) {
   var keys = {};
   var last = sh.getLastRow();
   if (last < ROW.DATA_START) return keys;
   var first = Math.min(COL.MACHINE, COL.DESC, COL.END_TIME, COL.DATE);
   var width = Math.max(COL.MACHINE, COL.DESC, COL.END_TIME, COL.DATE) - first + 1;
-  var range = sh.getRange(ROW.DATA_START, first, last - ROW.DATA_START + 1, width);
+  var n = last - ROW.DATA_START + 1;
+  var range = sh.getRange(ROW.DATA_START, first, n, width);
   var vals = range.getDisplayValues();
   var notes = range.getNotes();
+  var dates = dateTexts_(sh, ROW.DATA_START, n, vals.map(function (v) { return v[COL.DATE - first]; }));
   vals.forEach(function (v, i) {
     var c = v[COL.MACHINE - first], d = v[COL.DESC - first];
     if (isEmpty_(c) && isEmpty_(d)) return;
     var orig = function (col, shown) { return originalFromNote_(notes[i][col - first]) || shown; };
-    var key = recordKey_(orig(COL.MACHINE, c), orig(COL.DESC, d), v[COL.END_TIME - first], v[COL.DATE - first]);
+    var key = recordKey_(orig(COL.MACHINE, c), orig(COL.DESC, d), v[COL.END_TIME - first], dates[i]);
     if (!keys.hasOwnProperty(key)) keys[key] = ROW.DATA_START + i;
   });
   return keys;
@@ -297,8 +313,10 @@ function previewWeChat(text, otherSheet, opts) {
   var other = issueSheet_(ss, otherSheet).getName();
   var recs = parseReports(text);
   var routes = projectRoutes_(ss);
+  var deleted = deletedKeys_(ss);
   var info = {};
   recs.forEach(function (r) {
+    if (deleted.hasOwnProperty(r.key)) r.deletedBefore = deleted[r.key];
     var name = targetSheetName_(r, other, routes);
     if (!info[name]) info[name] = sheetInfo_(ss, name);
     r.sheet = name;
@@ -382,12 +400,13 @@ function toView_(r) {
     skip: r.skip,
     writable: r.writable,
     duplicateOf: r.duplicateOf || null,
+    deletedBefore: r.deletedBefore || null, // pernah dihapus lewat tool (WeChat_Deleted)
     translated: !!r.tr,
     // K tanpa pelapor: UI menambahkan pelapor yang dipilih dengan aturan yang sama (withReporter_).
     cells: { C: row.values.MACHINE, D: row.values.DESC, K: row.notesBase },
     empty: row.empty.map(function (k) { return { key: k, col: colLetter_(COL[k]) }; }),
     warnings: r.warnings.map(function (w) { return { col: w.col ? colLetter_(COL[w.col]) : '', msg: w.msg }; }),
-    include: r.writable && !r.sheetError && !r.skip && !r.duplicateOf
+    include: r.writable && !r.sheetError && !r.skip && !r.duplicateOf && !r.deletedBefore
   };
 }
 

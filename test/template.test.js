@@ -104,7 +104,8 @@ test('kode proyek: laporan ②Nama proyek: L-7 otomatis masuk sheet baru, mulai 
   const init = plain(gas.getInitData());
   assert.deepEqual(init.projectSheets, [
     { project: 'L7', sheet: 'L7 list', ok: true },
-    { project: 'E245', sheet: 'Geely list (2)', ok: true }
+    { project: 'E245', sheet: 'Geely list (2)', ok: true },
+    { project: 'DJ2518', sheet: 'Limo list (2)', ok: false }
   ]);
   assert.ok(init.sheets.includes('L7 list'));
 
@@ -148,14 +149,16 @@ test('spreadsheet baru: sheet E245 dari menu menggantikan "Geely list (2)" yang 
   const gas = load(ss);
   gas.createIssueSheet({ sheetName: 'L7 list', projectCode: 'L7' });
   let out = gas.setup();
-  assert.equal(out.split('\n')[0], '1 masalah ditemukan.');
+  assert.equal(out.split('\n')[0], '2 masalah ditemukan.');
   assert.match(out, /✗ Proyek E245 → "Geely list \(2\)" tidak ditemukan .*Buat sheet baru" dengan kode E245/);
 
   assert.equal(gas.createIssueSheet({ sheetName: 'E245 list', projectCode: 'E245' }).code, 'E245');
+  gas.createIssueSheet({ sheetName: 'DJ2518 list', projectCode: 'DJ2518' });
   out = gas.setup();
   assert.equal(out.split('\n')[0], 'Setup OK. Reload spreadsheet, lalu pakai menu WeChat Import.');
   assert.match(out, /✓ Proyek L7 → "L7 list"/);
   assert.match(out, /✓ Proyek E245 → "E245 list"/);
+  assert.match(out, /✓ Proyek DJ2518 → "DJ2518 list"/);
   assert.match(out, /✓ "E245 list": baris berikutnya 9, dropdown H cocok/);
   const p = plain(gas.previewWeChat(SAMPLE, 'L7 list'));
   assert.ok(p.records.every((r) => r.sheet === 'E245 list'));

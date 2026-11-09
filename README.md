@@ -133,6 +133,26 @@ Tombol ✎ kiri atas = Impor, tombol kanan atas (angka merah) = Lengkapi.
    Menu ini hanya mengubah kolom **C, D, E, F, K mulai baris 9** di sheet issue. H (dropdown), I (nama PIC),
    angka, header, dan sel ber-dropdown selalu dilewati, jadi aman walau Anda memilih satu baris penuh.
 
+### 3d. Menghapus laporan yang salah masuk
+Contoh: pelapor meng-upload laporan yang seharusnya tidak dilaporkan, dan sudah terlanjur diimpor.
+- **Hapus** ada di halaman Selesai (per baris yang baru ditulis) dan di setiap kartu Lengkapi. Klik dua kali
+  (klik pertama: "Yakin? Klik lagi", batal sendiri setelah 4 detik).
+- Yang terjadi: barisnya dihapus utuh dari sheet (baris di bawahnya naik, tidak ada lubang). Sebelum dihapus,
+  isi baris disalin ke sheet tersembunyi **WeChat_Deleted** (waktu hapus, sheet, baris, B–K, catatan, teks asli).
+  Salah hapus? Buka sheet itu (klik kanan tab sheet → *Show sheet* / tampilkan) lalu salin balik.
+- **Nomor (No.)**: nomor laporan lain tidak pernah diubah (di sheet asli nomor dipakai sebagai ID dan sudah tidak
+  berurutan). Kalau yang dihapus laporan terakhir, nomor siap-pakai di bawahnya dimundurkan, jadi laporan
+  berikutnya memakai nomor yang dihapus.
+- Kalau chat yang sama di-paste lagi, laporan itu ditandai **"pernah dihapus"** dan tidak dicentang (masih bisa
+  dicentang manual).
+- Pengaman: kalau isi baris sudah berubah sejak layar dimuat (mis. baris bergeser), tidak ada yang dihapus.
+
+Menghapus **manual** di spreadsheet juga boleh, tapi:
+| Cara | Akibat |
+|---|---|
+| Klik kanan nomor baris → *Delete row* | Aman. Tidak tercatat di WeChat_Deleted, dan kalau chat yang sama di-paste lagi, laporannya tercentang lagi |
+| Pilih sel C–K lalu tombol Delete | Baris jadi **lubang** (nomor B & catatan sel tetap). Impor berikutnya mengisi lubang itu: laporan baru masuk di tengah dengan nomor lama. Hindari |
+
 ### 3c. Lengkapi dari web app (tanpa menu)
 Tombol kanan atas (angka = jumlah baris yang belum lengkap), kartu *Kelengkapan* / titik merah di Ringkasan, tombol
 **Lengkapi Root Cause / Solution →** di halaman Selesai, atau menu **WeChat Import → Lengkapi Root Cause / Solution…**.
@@ -149,7 +169,9 @@ Tombol kanan atas (angka = jumlah baris yang belum lengkap), kartu *Kelengkapan*
 - Pengaman: isi berbahasa Mandarin (mis. dari manajer) **tidak pernah ditimpa**; kalau baris itu berubah sejak daftar
   dimuat (mis. ada baris disisipkan), tidak ada yang ditulis dan Anda diminta *Muat ulang*; kalau terjemahan gagal,
   tidak ada yang ditulis.
-- Tanggal baris lama manajer yang tersimpan sebagai angka (tampil `46313`) ditampilkan sebagai `2026/10/18`.
+- Tanggal baris lama manajer yang tersimpan sebagai angka (tampil `46313`) ditampilkan sebagai `2026/10/18`;
+  sel tanggal yang tampil `11/1/2026` (format US) dibaca dari nilainya, jadi `2026/11/01` (juga untuk deteksi duplikat).
+- E/F berisi `-` atau `-\n(-)` (sengaja tidak ada, mis. masalah operasi) dianggap sudah terisi.
 
 ### 3b. Terjemahan
 - **Format** sama dengan sheet manajer: Mandarin, lalu baris baru, lalu Inggris dalam kurung.
@@ -216,7 +238,7 @@ Yang **tidak** bisa sama persis:
 **Tidak ada sel yang diwarnai.** Baris yang ditulis tool latarnya dikembalikan polos (sisa kuning dari versi lama
 ikut hilang). Kolom yang masih harus dilengkapi tampil di layar Periksa, layar Selesai, dan teks pertanyaan mentor.
 
-- **Sheet tujuan:** proyek di `PROJECT_SHEET` (E245 → `Geely list (2)`) atau kode dari *Buat sheet baru*; proyek lain →
+- **Sheet tujuan:** proyek di `PROJECT_SHEET` (E245 → `Geely list (2)`, DJ2518 → `Limo list (2)`) atau kode dari *Buat sheet baru*; proyek lain →
   sheet yang dipilih di UI. ② `DJ2518 - VFLimo7` cocok dengan kode `DJ2518VFLimo7`, `DJ2518`, **atau** `VFLimo7`.
 - **Baris tujuan:** baris pertama mulai baris 9 yang **C dan D-nya kosong**. Kalau sheet kehabisan baris, baris
   ditambah otomatis; baris di bawah tabel template (setelah baris 35) menyalin format & dropdown H dari baris di atasnya.
@@ -354,6 +376,8 @@ npm run build   # buat ulang dist/ setelah mengubah src/
   berurutan, tidak menebak tanpa header, K ringkas + pelapor, rute `DJ2518 - VFLimo7`, pelapor dipilih manual,
   terbaca lagi di Lengkapi/Ringkasan).
 - `test/dashboard.test.js`: data halaman Ringkasan.
+- `test/delete.test.js`: hapus baris (laporan terakhir & di tengah, nomor/ID, log WeChat_Deleted, tanda "pernah
+  dihapus" saat paste ulang, penolakan tanpa menulis), tanggal dari sel bertanggal asli, E/F berisi `-`.
 - `test/edit.test.js`: *✎ Edit isi sel* (teks Mandarin apa adanya, teks Indonesia diterjemahkan termasuk format C,
   E/F saat impor, validasi G/J, C & D kosong ditolak, terjemahan gagal → tidak menulis, tombol ↻).
 - `test/capacity.test.js`: data banyak (sheet kehabisan baris, tabel template penuh, paste 120 laporan).

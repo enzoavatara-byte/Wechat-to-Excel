@@ -33,7 +33,8 @@ var HEADER_CHECK = ['No.', 'Machine', 'Issue Description'];
 // Proyek (②) -> nama sheet tujuan. Kunci: huruf besar, tanpa spasi/strip ("e-245" -> "E245").
 // Proyek yang tidak ada di sini masuk ke sheet yang dipilih di UI.
 var PROJECT_SHEET = {
-  'E245': 'Geely list (2)'
+  'E245': 'Geely list (2)',
+  'DJ2518': 'Limo list (2)'   // B4 sheet itu: "DJ2518 – VFLimo7"; juga cocok untuk ② "DJ2518 - VFLimo7"
 };
 
 // Isi dropdown kolom H. Harus sama persis dengan daftar di sheet (I2:I5).

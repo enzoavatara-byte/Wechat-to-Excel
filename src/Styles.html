@@ -191,6 +191,15 @@
   .tag.green { background: var(--ok-bg); color: var(--ok); }
   a.tag { text-decoration: none; }
   .ok-text { color: var(--ok); }
+  .btn.danger { color: var(--ng); }
+  .btn.danger.armed { background: var(--ng); color: #fff; }
+  tr.is-deleted td { opacity: .45; }
+  tr.is-deleted td:nth-child(4) { text-decoration: line-through; }
+  .toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 30; width: max-content;
+    max-width: min(560px, calc(100% - 32px)); padding: 12px 18px; border-radius: 16px; background: var(--card-2);
+    border: 1px solid var(--line-strong); box-shadow: 0 10px 30px rgba(0, 0, 0, .5); font-size: 14px; }
+  .toast.ok { border-color: var(--ok); }
+  .toast.err { border-color: var(--ng); color: var(--ng); }
 
   /* ---------- info laporan & masalah ---------- */
   .info-strip { display: flex; flex-wrap: wrap; gap: 8px; }

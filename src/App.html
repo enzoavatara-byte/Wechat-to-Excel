@@ -13,6 +13,7 @@
     translate: true, // false setelah memilih "Lanjut tanpa terjemahan"
     newSheetFrom: '', // 'menu' (dialog sendiri) atau 'paste' (dari tautan "+ Sheet baru")
     importView: 'paste', // langkah impor terakhir, dipulihkan saat kembali ke Impor
+    result: null,    // hasil impor terakhir (layar Selesai)
     edits: {},       // id -> { KEY_KOLOM: isi sel yang diubah manual } (lihat Edit.gs)
     editing: {},     // id -> kartu sedang dalam mode edit?
     reporter: {},    // id -> pelapor yang dipilih manual (menimpa nama dari header chat)
@@ -139,6 +140,15 @@
     return k + (k ? ' | ' : '') + 'Pelapor: ' + name;
   }
   function setBadge(n) { $('cmp-badge').textContent = n ? n : ''; }
+  var toastTimer = null;
+  /** Pesan singkat di bawah layar (tanpa menggulung halaman). */
+  function toast(msg, kind) {
+    var t = $('toast');
+    t.textContent = msg;
+    t.className = 'toast ' + (kind || 'ok');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { t.classList.add('hidden'); }, 6000);
+  }
 
   // ---------- navigasi ----------
   var VIEWS = ['dash', 'paste', 'preview', 'result', 'newsheet', 'complete'];
@@ -469,6 +479,7 @@
     if (r.type) tags.push('<span class="tag ' + (r.skip ? '' : (r.discipline ? 'blue' : 'amber')) + '">' + esc(r.type) + '</span>');
     if (r.skip) tags.push('<span class="tag">default tidak diimpor</span>');
     if (r.duplicateOf) tags.push('<span class="tag amber">' + esc(dupText(r.duplicateOf)) + '</span>');
+    if (r.deletedBefore) tags.push('<span class="tag amber">pernah dihapus ' + esc(r.deletedBefore.at) + '</span>');
     if (r.sheetError) tags.push('<span class="tag red">' + esc(r.sheetError) + '</span>');
     else if (!r.writable) tags.push('<span class="tag red">tidak bisa ditulis</span>');
     var nEdit = Object.keys(changed(r)).length + (reporterChanged(r) ? 1 : 0);
@@ -903,21 +914,25 @@
       ? '<div class="alert err"><b>Tidak ditulis:</b><ul>' + res.errors.map(function (e) { return '<li>' + esc(e) + '</li>'; }).join('') + '</ul></div>'
       : '';
 
+    state.result = res;
     state.written = w;
-    var chat = w.length ? '<div class="card"><div class="card-row"><h2>Teks chat untuk teknisi</h2>' +
+    var live = w.filter(function (x) { return !x.deleted; });
+    var chat = live.length ? '<div class="card"><div class="card-row"><h2>Teks chat untuk teknisi</h2>' +
       '<button type="button" class="btn primary sm" id="btn-copy">Salin</button></div>' +
       '<div class="muted small">Ringkas: masalah, jam, PIC, pelapor, lalu baris ✏️ yang tinggal diisi. Boleh diedit sebelum disalin.</div>' +
-      '<textarea id="mentor-text" class="chat-text" spellcheck="false">' + esc(chatText(w.map(writtenChat))) + '</textarea></div>' : '';
+      '<textarea id="mentor-text" class="chat-text" spellcheck="false">' + esc(chatText(live.map(writtenChat))) + '</textarea></div>' : '';
 
     var table = w.length ? '<div class="card"><h2>Baris yang ditulis</h2><div class="table-wrap"><table>' +
-      '<thead><tr><th>No.</th><th>Sheet · baris</th><th>Waktu</th><th>Machine · Deskripsi</th><th>Perlu dilengkapi</th></tr></thead><tbody>' +
-      w.map(function (x) {
-        return '<tr><td class="num">' + esc(x.no) + '</td>' +
-          '<td class="nowrap"><a href="' + esc(rowUrl(res.url, x)) + '" target="_blank" rel="noopener">' + esc(x.sheet) + ' · ' + x.row + ' ↗</a></td>' +
+      '<thead><tr><th>No.</th><th>Sheet · baris</th><th>Waktu</th><th>Machine · Deskripsi</th><th>Perlu dilengkapi</th><th></th></tr></thead><tbody>' +
+      w.map(function (x, i) {
+        return '<tr' + (x.deleted ? ' class="is-deleted"' : '') + '><td class="num">' + esc(x.no) + '</td>' +
+          '<td class="nowrap">' + (x.deleted ? esc(x.sheet) + ' · dihapus'
+            : '<a href="' + esc(rowUrl(res.url, x)) + '" target="_blank" rel="noopener">' + esc(x.sheet) + ' · ' + x.row + ' ↗</a>') + '</td>' +
           '<td class="nowrap">' + esc([x.date, x.start].filter(Boolean).join(' ')) + '</td>' +
           '<td>' + (x.machine ? esc(x.machine) : empty()) + '<div class="muted small clamp">' + esc(x.description) + '</div></td>' +
-          '<td><div class="chips">' + colChips(x.empty) + '</div></td></tr>';
-      }).join('') + '</tbody></table></div></div>' : '';
+          '<td><div class="chips">' + (x.deleted ? '' : colChips(x.empty)) + '</div></td>' +
+          '<td>' + (x.deleted ? '' : '<button type="button" class="btn ghost sm danger res-del" data-i="' + i + '" title="Hapus baris ini dari sheet">Hapus</button>') + '</td></tr>';
+      }).join('') + '</tbody></table></div><p class="hint">Salah masuk (mis. laporan yang tidak seharusnya di-upload)? Klik Hapus dua kali.</p></div>' : '';
 
     var actions = '<div class="end-actions">' +
       (w.length ? '<button type="button" class="btn ghost" id="btn-to-complete">Lengkapi Root Cause / Solution →</button>' : '') +
@@ -1171,7 +1186,9 @@
     var form = done ? '' : '<div class="rec-body cmp-form">' +
       cmpText('Root Cause (E)', 'rootCause', r.rootCause, r) + cmpText('Solution (F)', 'solution', r.solution, r) + disc +
       picker('pic', splitNames(cmpPicVal(r)), false) + '</div>';
-    var foot = done ? '' : '<div class="rec-foot cmp-actions"><span class="cmp-status small"></span>' +
+    var foot = done ? '' : '<div class="rec-foot cmp-actions">' +
+      '<button type="button" class="btn ghost sm danger cmp-del" title="Hapus baris ini dari sheet">Hapus</button>' +
+      '<span class="cmp-status small"></span>' +
       '<button type="button" class="btn ghost sm cmp-chat1">💬 Chat</button>' +
       '<button type="button" class="btn primary sm cmp-save">' + (state.cmp.translate ? 'Simpan &amp; terjemahkan' : 'Simpan') + '</button></div>';
     return '<article class="rec cmp ' + (done ? 'is-done' : 'is-on') + '" data-key="' + esc(cmpKey(r)) + '">' + head + body + form + foot + '</article>';
@@ -1225,6 +1242,87 @@
       status.className = 'cmp-status small err-text';
       status.textContent = cleanErr(e);
     });
+  }
+
+  // ---------- Hapus baris (laporan yang tidak seharusnya masuk) ----------
+  /** Dua langkah: klik pertama minta konfirmasi selama 4 detik, klik kedua baru menghapus. */
+  function armDelete(btn) {
+    if (btn.classList.contains('armed')) return true;
+    btn.classList.add('armed');
+    btn.textContent = 'Yakin? Klik lagi';
+    setTimeout(function () {
+      if (btn.classList.contains('armed') && !btn.classList.contains('is-busy')) { btn.classList.remove('armed'); btn.textContent = 'Hapus'; }
+    }, 4000);
+    return false;
+  }
+
+  /** target = { sheet, row, machine, description }: isi C/D yang terlihat di layar (dicek ulang di server). */
+  function doDelete(btn, target) {
+    if (!armDelete(btn)) return;
+    busy(btn, true, 'Menghapus…');
+    call('deleteIssueRow', { sheet: target.sheet, row: target.row, expect: { machine: target.machine, description: target.description } })
+      .then(function (res) {
+        afterDelete(res);
+        toast('Baris ' + res.row + (res.no ? ' (No. ' + res.no + ')' : '') + ' dihapus dari “' + res.sheet + '”. ' +
+          'Salinannya di sheet tersembunyi ' + res.log + '; kalau di-paste lagi, laporan ini tidak dicentang.');
+      }).catch(function (e) {
+        busy(btn, false);
+        btn.classList.remove('armed');
+        btn.textContent = 'Hapus';
+        toast('Gagal menghapus: ' + cleanErr(e), 'err');
+      });
+  }
+
+  function cmpDrafts() {
+    var out = {};
+    each('#cmp-list .rec', function (art) {
+      var x = {};
+      Array.prototype.forEach.call(art.querySelectorAll('.cmp-input'), function (el) { x[el.getAttribute('data-name')] = el.value; });
+      out[art.getAttribute('data-key')] = x;
+    });
+    return out;
+  }
+  function restoreDrafts(drafts) {
+    each('#cmp-list .rec', function (art) {
+      var x = drafts[art.getAttribute('data-key')];
+      if (!x) return;
+      Array.prototype.forEach.call(art.querySelectorAll('.cmp-input'), function (el) {
+        var n = el.getAttribute('data-name');
+        if (!x.hasOwnProperty(n)) return;
+        el.value = x[n];
+        if (el.tagName === 'SELECT') el.classList.toggle('is-empty', !el.value);
+      });
+    });
+  }
+
+  /** Baris di bawah yang dihapus naik satu: perbarui daftar Lengkapi (isian yang belum disimpan tetap) & layar Selesai. */
+  function afterDelete(res) {
+    var key = res.sheet + '|' + res.row;
+    var below = function (x) { return x.sheet === res.sheet && x.row > res.row; };
+    var rekey = function (k) {
+      var i = k.lastIndexOf('|'), r = Number(k.slice(i + 1));
+      return k.slice(0, i) === res.sheet && r > res.row ? res.sheet + '|' + (r - 1) : k;
+    };
+    if (state.cmp) {
+      var old = cmpDrafts(), drafts = {}, pics = {};
+      Object.keys(old).forEach(function (k) { if (k !== key) drafts[rekey(k)] = old[k]; });
+      Object.keys(state.cmpPic).forEach(function (k) { if (k !== key) pics[rekey(k)] = state.cmpPic[k]; });
+      state.cmpPic = pics;
+      var gone = cmpByKey(key);
+      state.cmp.rows = state.cmp.rows.filter(function (x) { return cmpKey(x) !== key; });
+      state.cmp.rows.forEach(function (x) { if (below(x)) x.row -= 1; });
+      if (gone && gone.need.length) state.cmp.total = Math.max(0, state.cmp.total - 1);
+      setBadge(state.cmp.total);
+      if (state.view === 'complete') { renderComplete(); restoreDrafts(drafts); }
+    }
+    var hit = false;
+    state.written.forEach(function (x) {
+      if (x.deleted || x.sheet !== res.sheet) return;
+      if (!hit && x.row === res.row) { x.deleted = true; hit = true; }
+      else if (x.row > res.row) x.row -= 1;
+    });
+    if (state.view === 'result' && state.result) renderResult(state.result);
+    loadDashboard(); // angka Lengkapi + Ringkasan
   }
 
   // ---------- event ----------
@@ -1285,6 +1383,7 @@
     if (pickerClick(e, cmpGet, cmpSet)) return;
     var art = e.target.closest('.rec');
     if (e.target.classList.contains('cmp-save')) saveCard(art);
+    else if (e.target.classList.contains('cmp-del')) doDelete(e.target, cmpByKey(art.getAttribute('data-key')));
     else if (e.target.classList.contains('cmp-chat1')) {
       var r = cmpByKey(art.getAttribute('data-key'));
       showCmpChat([r], 'Satu laporan: No. ' + (r.no || '–') + ' (' + r.sheet + ' baris ' + r.row + ').');
@@ -1392,6 +1491,11 @@
 
   $('view-result').addEventListener('click', function (e) {
     var id = e.target.id;
+    if (e.target.classList.contains('res-del')) {
+      var x = state.written[Number(e.target.getAttribute('data-i'))];
+      if (x && !x.deleted) doDelete(e.target, { sheet: x.sheet, row: x.row, machine: x.cells.C, description: x.cells.D });
+      return;
+    }
     if (id === 'btn-copy') copyText($('mentor-text'), e.target);
     else if (id === 'btn-close') google.script.host.close();
     else if (id === 'btn-to-complete') openComplete();

@@ -33,7 +33,8 @@ test('getInitData: hanya sheet dengan header baris 8 yang ditawarkan', () => {
   const d = plain(gas.getInitData());
   assert.deepEqual(d.sheets, ['LImo 7 list', 'Geely list (2)']);
   assert.equal(d.defaultOther, 'LImo 7 list'); // sheet aktif (Revision_History) bukan sheet issue
-  assert.deepEqual(d.projectSheets, [{ project: 'E245', sheet: 'Geely list (2)', ok: true }]);
+  assert.deepEqual(d.projectSheets, [{ project: 'E245', sheet: 'Geely list (2)', ok: true },
+    { project: 'DJ2518', sheet: 'Limo list (2)', ok: false }]); // rute Config ke sheet yang tidak ada di file uji
 });
 
 test('preview: change over tidak dicentang, baris tujuan Geely mulai 18', () => {
@@ -253,6 +254,8 @@ test('menu Terjemahkan sel terpilih: teks Indonesia jadi 中文 + (English); rum
 
 test('setup: set timezone, cek sheet/proyek/dropdown, tidak menulis data', () => {
   const { gas, ss } = setup();
+  gas.createIssueSheet({ sheetName: 'Limo list (2)' }); // tujuan rute DJ2518 di Config
+  ss.getSheets().forEach((sh) => { sh.writes = 0; });
   const out = gas.setup();
   assert.equal(ss.getSpreadsheetTimeZone(), 'Asia/Shanghai');
   assert.equal(out.split('\n')[0], 'Setup OK. Reload spreadsheet, lalu pakai menu WeChat Import.');
@@ -268,8 +271,9 @@ test('setup: nama sheet berubah & dropdown beda -> dilaporkan sebagai masalah', 
   geely.name = 'Geely list';
   limo.set('I5', 'MES System');
   const out = gas.setup();
-  assert.equal(out.split('\n')[0], '2 masalah ditemukan.');
+  assert.equal(out.split('\n')[0], '3 masalah ditemukan.');
   assert.match(out, /✗ Proyek E245 → "Geely list \(2\)" tidak ditemukan/);
+  assert.match(out, /✗ Proyek DJ2518 → "Limo list \(2\)" tidak ditemukan/);
   assert.match(out, /✗ "LImo 7 list": dropdown H \[Machine, Operation, Product Item, MES System\] tidak berisi MES/);
   assert.ok(ss.getSheets().every((sh) => sh.writes === 0));
 });

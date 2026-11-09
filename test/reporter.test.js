@@ -74,20 +74,22 @@ test('rute: kode proyek cocok dengan salah satu bagian "DJ2518 - VFLimo7"', () =
 test('impor: pelapor dari header, bisa diganti di pratinjau; terbaca lagi di Lengkapi, Ringkasan, daftar nama', () => {
   const ss = managerSpreadsheet();
   const gas = loadGas(FILES, services(ss));
+  gas.createIssueSheet({ sheetName: 'Limo list (2)', projectName: 'DJ2518 – VFLimo7' }); // seperti file asli
   const p = plain(gas.previewWeChat(LIMO + SECOND, 'LImo 7 list'));
   assert.deepEqual(p.records.map((r) => r.reporter), ['Raihan Farhan', 'Andi Saputra']);
   assert.equal(p.records[0].cells.K, '开始：7:30；影响时长：95分钟\n(Start: 7:30; Downtime: 95 min)'); // tanpa pelapor (ditambah UI)
   const res = plain(gas.importWeChat(LIMO + SECOND, 'LImo 7 list', [{ id: 0 }, { id: 1, reporter: '  Budi   Santoso ' }]));
   assert.deepEqual(res.errors, []);
-  const limo = ss.getSheetByName('LImo 7 list');
+  const limo = ss.getSheetByName('Limo list (2)');
   const [a, b] = res.written;
+  assert.deepEqual([a.sheet, a.row, a.no, b.row, b.no], ['Limo list (2)', 9, 1, 10, 2]); // rute DJ2518 (Config)
   assert.equal(limo.get('K' + a.row), '开始：7:30；影响时长：95分钟；报告人：Raihan Farhan\n(Start: 7:30; Downtime: 95 min; Reporter: Raihan Farhan)');
   assert.equal(limo.get('K' + b.row), '开始：9:40；影响时长：30分钟；报告人：Budi Santoso\n(Start: 9:40; Downtime: 30 min; Reporter: Budi Santoso)');
   assert.ok(limo.note('K' + a.row).includes('| Pelapor: Raihan Farhan'));
   assert.equal(a.reporter, 'Raihan Farhan');
-  const row = plain(gas.listIncomplete()).rows.find((r) => r.row === b.row && r.sheet === 'LImo 7 list');
+  const row = plain(gas.listIncomplete()).rows.find((r) => r.row === b.row && r.sheet === 'Limo list (2)');
   assert.deepEqual([row.reporter, row.start, row.downtime], ['Budi Santoso', '9:40', 30]);
-  const dash = plain(gas.getDashboard()).rows.find((r) => r.row === a.row && r.sheet === 'LImo 7 list');
+  const dash = plain(gas.getDashboard()).rows.find((r) => r.row === a.row && r.sheet === 'Limo list (2)');
   assert.equal(dash.reporter, 'Raihan Farhan');
   assert.deepEqual(plain(gas.getInitData()).reporters.map((x) => x.name), ['Budi Santoso', 'Raihan Farhan']);
 });
