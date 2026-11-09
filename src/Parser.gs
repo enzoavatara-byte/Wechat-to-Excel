@@ -40,12 +40,21 @@ var MARKER_RE = /([①②③④⑤⑧⑨])|([⑥⑦])(?:\s*[-–—]\s*([12])|([
  * Teks tanpa simbol ①–⑨ sama sekali -> [].
  */
 function parseReports(text) {
+  var norm = normalizeText_(text);
   var blocks = [];
-  tokenize_(normalizeText_(text)).forEach(function (t) {
+  tokenize_(norm).forEach(function (t) {
     if (t.startsNew) blocks.push([]);
     blocks[blocks.length - 1].push(t);
   });
-  var recs = blocks.map(buildRecord_);
+  // Pelapor dulu: baris header WeChat dibuang dari isi field sebelumnya sebelum record dibangun.
+  var reporters = blocks.map(function (b, i) {
+    return senderBefore_(norm, i ? blocks[i - 1][blocks[i - 1].length - 1] : null, b[0]);
+  });
+  var recs = blocks.map(function (b, i) {
+    var rec = buildRecord_(b, i);
+    rec.reporter = reporters[i];
+    return rec;
+  });
   recs.sort(function (a, b) {
     var ka = sortKey_(a), kb = sortKey_(b);
     if (ka !== kb) return ka < kb ? -1 : 1;
@@ -93,6 +102,52 @@ function parseDateTime(s) {
   return out;
 }
 
+// ---------- Pelapor (header pesan WeChat) ----------
+
+// Saat chat WeChat disalin, tiap pesan diawali nama pengirim lalu waktu kirim:
+//   Raihan Farhan
+//   2026/11/09  9:05
+//   ①Tingkat saat ini: L1 …
+// Nama itu = pelapor. Hanya dibaca kalau polanya persis begini (nama di baris tepat sebelum baris
+// waktu, tepat sebelum laporan); selain itu pelapor kosong, tidak ditebak.
+var SENT_AT_RE = /^(?:\d{4}[\/.\-]\d{1,2}[\/.\-]\d{1,2}\s+)?\d{1,2}:\d{2}(?::\d{2})?$/;
+var SENT_LINE_RE = /^(.+?)\s+\d{4}[\/.\-]\d{1,2}[\/.\-]\d{1,2}\s+\d{1,2}:\d{2}(?::\d{2})?$/;
+
+/** Nama pengirim WeChat yang masuk akal: pendek, satu baris, bukan "label: isi", tanpa simbol ①–⑨. */
+function senderName_(s) {
+  var n = String(s || '').replace(/[:\uFF1A]\s*$/, '').replace(/\s+/g, ' ').trim();
+  if (!n || n.length > 40 || /[:\u2460-\u2468]/.test(n) || SENT_AT_RE.test(n) || isBlank_(n)) return '';
+  return n;
+}
+
+/**
+ * Pelapor untuk laporan yang dimulai di token `first`. `prev` = token terakhir laporan sebelumnya
+ * (header ikut terbaca di isi field itu; bagian itu dipotong dari prev.raw).
+ */
+function senderBefore_(text, prev, first) {
+  var from = prev ? prev.end : 0;
+  var lines = [];
+  var pos = from;
+  text.slice(from, first.start).split('\n').forEach(function (l, i) {
+    // Baris pertama setelah simbol sebelumnya adalah isi field itu sendiri.
+    if (l.trim() && !(prev && i === 0)) lines.push({ text: l.trim(), at: pos });
+    pos += l.length + 1;
+  });
+  var last = lines[lines.length - 1];
+  if (!last) return '';
+  var name = '', cut = -1, one = SENT_LINE_RE.exec(last.text);
+  if (SENT_AT_RE.test(last.text) && lines.length > 1) {
+    name = senderName_(lines[lines.length - 2].text);
+    cut = lines[lines.length - 2].at;
+  } else if (one) {
+    name = senderName_(one[1]);
+    cut = last.at;
+  }
+  if (!name) return '';
+  if (prev) prev.raw = text.slice(prev.end, cut);
+  return name;
+}
+
 // ---------- Tokenizer ----------
 
 function normalizeText_(s) {
@@ -135,7 +190,7 @@ function resolveSub_(base, maxRank) {
 function buildRecord_(tokens, index) {
   var raw = {};
   tokens.forEach(function (t) { raw[t.field.key] = t.raw; });
-  var rec = { index: index, warnings: [], missing: {} };
+  var rec = { index: index, warnings: [], missing: {}, reporter: '' };
 
   rec.level = textField_(rec, raw, 'level', null);
   rec.project = textField_(rec, raw, 'project', 'MACHINE');
@@ -305,7 +360,13 @@ function projectKey_(s) {
 
 /** `routes` = kode proyek -> sheet (lihat projectRoutes_); default PROJECT_SHEET dari Config. */
 function targetSheetName_(rec, otherSheet, routes) {
-  return (routes || PROJECT_SHEET)[projectKey_(rec.project)] || otherSheet;
+  routes = routes || PROJECT_SHEET;
+  // "DJ2518 - VFLimo7": nama lengkap dulu, lalu tiap bagian (kode "DJ2518" atau "VFLimo7").
+  var keys = [rec.project].concat(String(rec.project || '').split(/\s+[-\u2013\u2014]\s+/)).map(projectKey_);
+  for (var i = 0; i < keys.length; i++) {
+    if (keys[i] && routes.hasOwnProperty(keys[i])) return routes[keys[i]];
+  }
+  return otherSheet;
 }
 
 /**
@@ -334,6 +395,7 @@ function buildRow_(rec) {
     if (rec.missing[k]) empty.push(k);
   });
   var tr = !!rec.tr;
+  var notesBase = tr ? notesBi_(rec) : buildNotes_(rec);
   return {
     values: {
       MACHINE: tr ? machineBi_(rec) : rec.machine,
@@ -342,29 +404,80 @@ function buildRow_(rec) {
       DISCIPLINE: rec.discipline,
       PIC: rec.pic,
       DATE: rec.start.date ? dateSerial_(rec.start.date) : '',
-      NOTES: tr ? notesBi_(rec) : buildNotes_(rec)
+      NOTES: withReporter_(notesBase, rec.reporter)
     },
-    notes: tr ? cellNotes_(rec) : {},
+    notesBase: notesBase,
+    notes: cellNotes_(rec, tr),
     empty: empty
   };
 }
 
-function buildNotes_(rec) {
-  var info = [
-    'Level: ' + (rec.level || '-'),
-    'Mulai: ' + (fmtTime_(rec.start.time) || '-'),
-    'Durasi: ' + durationText_(rec),
-    'Jenis: ' + (rec.type || '-'),
-    'Lini: ' + (rec.lineStatus || '-'),
-    'Penanganan: ' + (rec.handling || '-')
-  ];
-  if (rec.start.date && rec.end.date && fmtDate_(rec.start.date) !== fmtDate_(rec.end.date)) {
-    info.push('Selesai: ' + fmtDate_(rec.end.date) + (rec.end.time ? ' ' + fmtTime_(rec.end.time) : ''));
+/**
+ * Isi K dibuat ringkas: jam mulai + downtime (+ pelapor) selalu; sisanya hanya kalau penting
+ * (level selain L1, jenis yang tidak masuk Discipline, status ⑦ yang belum normal/selesai, beda hari).
+ * Semua detail asli tetap ada di catatan sel K. [{ id: label Indonesia, zh, en, value, tr: kunci rec.tr }]
+ */
+function noteExtras_(rec) {
+  var out = [];
+  if (rec.level && typeKey_(rec.level) !== 'l1') out.push({ id: 'Level', zh: '等级', en: 'Level', value: rec.level });
+  if (rec.type && !rec.discipline) out.push({ id: 'Jenis', zh: '类型', en: 'Type', value: rec.type, tr: 'type' });
+  if (rec.lineStatus && !isDoneStatus_(rec.lineStatus)) {
+    out.push({ id: 'Lini', zh: '产线状态', en: 'Line status', value: rec.lineStatus, tr: 'lineStatus' });
   }
-  if (rec.disciplineManual) info.push('Discipline dipilih manual');
-  var lines = [info.join(' | ')];
-  rec.warnings.forEach(function (w) { lines.push('⚠ ' + w.msg); });
-  return lines.join('\n');
+  if (rec.handling && !isDoneStatus_(rec.handling)) {
+    out.push({ id: 'Penanganan', zh: '处理状态', en: 'Handling', value: rec.handling, tr: 'handling' });
+  }
+  if (rec.start.date && rec.end.date && fmtDate_(rec.start.date) !== fmtDate_(rec.end.date)) {
+    out.push({ id: 'Selesai', zh: '结束', en: 'End', value: fmtDate_(rec.end.date) + (rec.end.time ? ' ' + fmtTime_(rec.end.time) : '') });
+  }
+  return out;
+}
+
+/** Status ⑦ yang berarti normal/selesai ("Mesin pulih", "selesai di tangani"): tidak perlu di K. */
+function isDoneStatus_(s) {
+  var t = String(s || '').toLowerCase();
+  return /pulih|normal|selesai|sudah|beres|recovered|done|finish/.test(t) &&
+    !/belum|blm|tidak|tdk|masih|menunggu|pending|not /.test(t);
+}
+
+/** K tanpa terjemahan: "Mulai: 18:05 | Durasi: 18 menit" (+ info penting). Peringatan ada di catatan sel. */
+function buildNotes_(rec) {
+  var parts = ['Mulai: ' + (fmtTime_(rec.start.time) || '-'), 'Durasi: ' + durationText_(rec)];
+  noteExtras_(rec).forEach(function (x) { parts.push(x.id + ': ' + x.value); });
+  return parts.join(' | ');
+}
+
+// Awalan catatan sel yang berisi teks asli laporan (Bahasa Indonesia).
+var NOTE_PREFIX = 'Asli (ID): ';
+
+/**
+ * Catatan sel (muncul saat kursor di atas sel): semua info asli laporan + pelapor + peringatan di K;
+ * teks asli Indonesia di C/D (hanya kalau diterjemahkan).
+ */
+function cellNotes_(rec, translated) {
+  var info = 'Level: ' + (rec.level || '-') + ' | Jenis: ' + (rec.type || '-') +
+    ' | Lini: ' + (rec.lineStatus || '-') + ' | Penanganan: ' + (rec.handling || '-');
+  if (rec.reporter) info += ' | Pelapor: ' + rec.reporter;
+  var k = [NOTE_PREFIX + info];
+  if (rec.disciplineManual) k.push('Discipline dipilih manual');
+  rec.warnings.forEach(function (w) { k.push('⚠ ' + w.msg); });
+  return {
+    MACHINE: translated && rec.machine ? NOTE_PREFIX + rec.machine : '',
+    DESC: translated && rec.description ? NOTE_PREFIX + rec.description : '',
+    NOTES: k.join('\n')
+  };
+}
+
+/** Nama pelapor ditambahkan di akhir K (tidak diterjemahkan). K dua bahasa: di kedua baris. */
+function withReporter_(k, name) {
+  name = String(name || '').trim();
+  k = String(k || '');
+  if (!name) return k;
+  var i = k.lastIndexOf('\n(');
+  if (i !== -1 && k.charAt(k.length - 1) === ')') {
+    return k.slice(0, i) + '；报告人：' + name + '\n(' + k.slice(i + 2, -1) + '; Reporter: ' + name + ')';
+  }
+  return k + (k ? ' | ' : '') + 'Pelapor: ' + name;
 }
 
 function durationText_(rec) {

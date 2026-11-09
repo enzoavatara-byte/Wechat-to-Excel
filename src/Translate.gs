@@ -8,7 +8,6 @@
  * per bahasa). Teks asli Bahasa Indonesia disimpan sebagai catatan sel, jadi tidak hilang kalau
  * terjemahan mesin keliru, dan tetap dipakai untuk deteksi duplikat.
  */
-var NOTE_PREFIX = 'Asli (ID): ';
 var TRANSLATE_CHUNK_CHARS = 1800; // per panggilan; dijaga tetap jauh di bawah batas ±5.000 karakter, termasuk tag HTML
 
 function wantTranslate_(opts) {
@@ -23,11 +22,17 @@ function wantTranslate_(opts) {
 function translateRecords_(recs, translateFn) {
   var fn = translateFn || translateTexts_;
   var fields = ['process', 'description', 'type', 'lineStatus', 'handling'];
+  // Hemat kuota: jenis & status ⑦ hanya diterjemahkan kalau memang ditulis di K (lihat noteExtras_).
+  var needed = function (r, f) {
+    if (f === 'type') return !r.discipline;
+    if (f === 'lineStatus' || f === 'handling') return !isDoneStatus_(r[f]);
+    return true;
+  };
   var index = {};
   var sources = [];
   recs.forEach(function (r) {
     fields.forEach(function (f) {
-      var s = r[f];
+      var s = needed(r, f) ? r[f] : '';
       if (s && !TERMS.hasOwnProperty(typeKey_(s)) && !index.hasOwnProperty(s)) {
         index[s] = sources.length;
         sources.push(s);
@@ -43,7 +48,8 @@ function translateRecords_(recs, translateFn) {
     return { zh: zh[index[s]], en: en[index[s]], mt: true };
   };
   recs.forEach(function (r) {
-    r.tr = { process: tr(r.process), desc: tr(r.description), type: tr(r.type), lineStatus: tr(r.lineStatus), handling: tr(r.handling) };
+    r.tr = {};
+    fields.forEach(function (f) { r.tr[f === 'description' ? 'desc' : f] = needed(r, f) ? tr(r[f]) : null; });
     if (r.tr.process && r.tr.process.mt) {
       warn_(r, null, '③ "' + r.process + '" diterjemahkan mesin: ' + r.tr.process.zh + ' / ' + r.tr.process.en +
         '. Kalau sudah benar, tambahkan ke TERMS di Config supaya konsisten.');
@@ -270,48 +276,23 @@ function descBi_(rec) {
   return t ? bi_(t.zh, t.en) : rec.description;
 }
 
-/** K: info laporan dalam dua bahasa. Peringatan internal ada di catatan sel, bukan di sini. */
+/**
+ * K dua bahasa, ringkas: "开始：18:05；影响时长：18分钟\n(Start: 18:05; Downtime: 18 min)" + info penting
+ * dari noteExtras_. Pelapor ditambahkan oleh withReporter_. Detail lengkap & peringatan: catatan sel K.
+ */
 function notesBi_(rec) {
   var t = rec.tr || {};
-  var pick = function (x, lang) { return x ? x[lang] : '-'; };
   var d = rec.duration !== null ? rec.duration : rec.reportedDuration;
   var unverified = rec.duration === null && rec.reportedDuration !== null;
   var start = fmtTime_(rec.start.time) || '-';
-  var zh = [
-    '等级：' + (rec.level || '-'),
-    '开始：' + start,
-    '影响时长：' + (d !== null ? d + '分钟' + (unverified ? '（未核实）' : '') : '-'),
-    '类型：' + pick(t.type, 'zh'),
-    '产线状态：' + pick(t.lineStatus, 'zh'),
-    '处理状态：' + pick(t.handling, 'zh')
-  ];
-  var en = [
-    'Level: ' + (rec.level || '-'),
-    'Start: ' + start,
-    'Downtime: ' + (d !== null ? d + ' min' + (unverified ? ' (unverified)' : '') : '-'),
-    'Type: ' + pick(t.type, 'en'),
-    'Line status: ' + pick(t.lineStatus, 'en'),
-    'Handling: ' + pick(t.handling, 'en')
-  ];
-  if (rec.start.date && rec.end.date && fmtDate_(rec.start.date) !== fmtDate_(rec.end.date)) {
-    var end = fmtDate_(rec.end.date) + (rec.end.time ? ' ' + fmtTime_(rec.end.time) : '');
-    zh.push('结束：' + end);
-    en.push('End: ' + end);
-  }
+  var zh = ['开始：' + start, '影响时长：' + (d !== null ? d + '分钟' + (unverified ? '（未核实）' : '') : '-')];
+  var en = ['Start: ' + start, 'Downtime: ' + (d !== null ? d + ' min' + (unverified ? ' (unverified)' : '') : '-')];
+  noteExtras_(rec).forEach(function (x) {
+    var v = x.tr && t[x.tr] ? t[x.tr] : { zh: x.value, en: x.value };
+    zh.push(x.zh + '：' + v.zh);
+    en.push(x.en + ': ' + v.en);
+  });
   return bi_(zh.join('；'), en.join('; '));
-}
-
-/** Catatan sel (muncul saat kursor di atas sel): teks asli + peringatan. */
-function cellNotes_(rec) {
-  var k = [NOTE_PREFIX + 'Level: ' + (rec.level || '-') + ' | Jenis: ' + (rec.type || '-') +
-    ' | Lini: ' + (rec.lineStatus || '-') + ' | Penanganan: ' + (rec.handling || '-')];
-  if (rec.disciplineManual) k.push('Discipline dipilih manual');
-  rec.warnings.forEach(function (w) { k.push('⚠ ' + w.msg); });
-  return {
-    MACHINE: rec.machine ? NOTE_PREFIX + rec.machine : '',
-    DESC: rec.description ? NOTE_PREFIX + rec.description : '',
-    NOTES: k.join('\n')
-  };
 }
 
 /** Teks asli dari catatan "Asli (ID): …" di kolom C/D, atau null. */

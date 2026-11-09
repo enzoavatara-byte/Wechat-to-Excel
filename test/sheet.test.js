@@ -59,8 +59,8 @@ test('preview: C, D, K jadi 中文 + (English) seperti sheet manajer; istilah TE
   const r = p.records[1]; // 18:05, Change over
   assert.equal(r.cells.C, 'E245精加工\n(E245 Finishing)');
   assert.equal(r.cells.D, 'B盒上部模组换胶\n(glue replacement for box B upper module)'); // 模块 -> 模组 (ZH_FIXES)
-  assert.equal(r.cells.K, '等级：L1；开始：18:05；影响时长：18分钟；类型：换型；产线状态：设备已恢复；处理状态：处理完成\n' +
-    '(Level: L1; Start: 18:05; Downtime: 18 min; Type: Changeover; Line status: Machine recovered; Handling: Handling completed)');
+  // K ringkas: mulai + downtime; jenis hanya karena Change over tidak masuk Discipline. Status normal tidak ditulis.
+  assert.equal(r.cells.K, '开始：18:05；影响时长：18分钟；类型：换型\n(Start: 18:05; Downtime: 18 min; Type: Changeover)');
   assert.equal(p.records[0].cells.C, 'E245预装\n(E245 Pre-assembly)'); // Preassy dari TERMS
   assert.ok(!p.records[0].warnings.some((w) => w.msg.includes('diterjemahkan mesin')));
   // Semua teks sekaligus: satu panggilan Indonesia->Inggris, satu Inggris->Mandarin.
@@ -88,8 +88,7 @@ test('import: menulis ke baris pertama yang C & D kosong, nomor B yang ada tidak
   assert.equal(geely.get('I18'), 'muhamad gilang');
   assert.equal(geely.get('J18'), 46315);
   assert.equal(geely.fmt('J18'), 'yyyy/mm/dd');
-  assert.equal(geely.get('K18'), '等级：L1；开始：20:15；影响时长：8分钟；类型：设备；产线状态：设备已恢复；处理状态：处理完成\n' +
-    '(Level: L1; Start: 20:15; Downtime: 8 min; Type: Machine; Line status: Machine recovered; Handling: Handling completed)');
+  assert.equal(geely.get('K18'), '开始：20:15；影响时长：8分钟\n(Start: 20:15; Downtime: 8 min)');
   assert.equal(geely.note('K18'), 'Asli (ID): Level: L1 | Jenis: Mesin | Lini: Mesin pulih | Penanganan: Selesai penanganan\n' +
     '⚠ ③ "Press Modul" diterjemahkan mesin: 模组压装 / Module Press. Kalau sudah benar, tambahkan ke TERMS di Config supaya konsisten.');
   assertNoColor(geely, 18);
@@ -193,14 +192,15 @@ test('field rusak -> sel kosong tanpa warna, peringatan di catatan sel K', () =>
   assert.match(limo.note('K' + row), /⚠ ④ Waktu kejadian tanggal tidak terbaca: "20\/10\/2026 18:05"/);
 });
 
-test('tanpa terjemahan (translate: false): Bahasa Indonesia, peringatan di K, tanpa catatan sel', () => {
+test('tanpa terjemahan (translate: false): Bahasa Indonesia, K ringkas, detail di catatan sel K', () => {
   const { gas, geely, tr } = setup();
   const p = plain(gas.previewWeChat(SAMPLE, 'LImo 7 list', OFF));
   assert.equal(p.translated, false);
   assert.equal(p.records[3].cells.C, 'E245 - Press Modul');
   gas.importWeChat(SAMPLE, 'LImo 7 list', defaultPicks(p), OFF);
   assert.equal(geely.get('C18'), 'E245 - Press Modul');
-  assert.equal(geely.get('K18'), 'Level: L1 | Mulai: 20:15 | Durasi: 8 menit | Jenis: Mesin | Lini: Mesin pulih | Penanganan: Selesai penanganan');
+  assert.equal(geely.get('K18'), 'Mulai: 20:15 | Durasi: 8 menit');
+  assert.equal(geely.note('K18'), 'Asli (ID): Level: L1 | Jenis: Mesin | Lini: Mesin pulih | Penanganan: Selesai penanganan');
   assert.equal(geely.note('C18'), '');
   assertNoColor(geely, 18);
   assert.equal(tr.calls.length, 0);

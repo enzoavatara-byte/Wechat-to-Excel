@@ -143,14 +143,19 @@ test('parseNotesInfo_: format Mandarin+English, Bahasa Indonesia, dan Notes beba
   const bi = '等级：L1；开始：18:05；影响时长：16分钟（未核实）；类型：设备；产线状态：设备已恢复；处理状态：处理完成\n' +
     '(Level: L1; Start: 18:05; Downtime: 16 min (unverified); Type: Machine; Line status: Machine recovered; Handling: Handling completed)';
   assert.deepEqual(plain(gas.parseNotesInfo_(bi, '')),
-    { start: '18:05', downtime: 16, unverified: true, type: 'Machine', lineStatus: 'Machine recovered', handling: 'Handling completed' });
+    { start: '18:05', downtime: 16, unverified: true, type: 'Machine', lineStatus: 'Machine recovered', handling: 'Handling completed', reporter: '' });
   assert.deepEqual(plain(gas.parseNotesInfo_(bi, 'Asli (ID): Level: L1 | Jenis: Mesin | Lini: Mesin pulih | Penanganan: Selesai\n⚠ x')),
-    { start: '18:05', downtime: 16, unverified: true, type: 'Mesin', lineStatus: 'Mesin pulih', handling: 'Selesai' });
+    { start: '18:05', downtime: 16, unverified: true, type: 'Mesin', lineStatus: 'Mesin pulih', handling: 'Selesai', reporter: '' });
   const id = 'Level: L1 | Mulai: 7:40 | Durasi: 25 menit | Jenis: Mesin | Lini: - | Penanganan: sudah penanganan\n⚠ ⑦-1 Status lini tidak ada';
   assert.deepEqual(plain(gas.parseNotesInfo_(id, '')),
-    { start: '7:40', downtime: 25, unverified: false, type: 'Mesin', lineStatus: '', handling: 'sudah penanganan' });
+    { start: '7:40', downtime: 25, unverified: false, type: 'Mesin', lineStatus: '', handling: 'sudah penanganan', reporter: '' });
   assert.deepEqual(plain(gas.parseNotesInfo_('建议：工单下发SOP\n(Recommendation: SOP for Work Order Issuance)', '')),
-    { start: '', downtime: null, unverified: false, type: '', lineStatus: '', handling: '' });
+    { start: '', downtime: null, unverified: false, type: '', lineStatus: '', handling: '', reporter: '' });
+  // Format ringkas baru: pelapor di K (dua bahasa) dan di catatan sel.
+  const k2 = '开始：7:30；影响时长：95分钟；报告人：Raihan Farhan\n(Start: 7:30; Downtime: 95 min; Reporter: Raihan Farhan)';
+  assert.deepEqual(plain(gas.parseNotesInfo_(k2, 'Asli (ID): Level: L1 | Jenis: Masalah Mesin | Lini: Machine pulih | Penanganan: selesai di tangani | Pelapor: Raihan Farhan')),
+    { start: '7:30', downtime: 95, unverified: false, type: 'Masalah Mesin', lineStatus: 'Machine pulih', handling: 'selesai di tangani', reporter: 'Raihan Farhan' });
+  assert.equal(gas.parseNotesInfo_('Mulai: 7:30 | Durasi: 95 menit | Pelapor: Raihan', '').reporter, 'Raihan');
 });
 
 test('PIC: daftar nama dari kolom I semua sheet (ejaan terbanyak menang), simpan PIC dari pemilih', () => {

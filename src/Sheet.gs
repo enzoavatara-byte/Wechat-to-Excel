@@ -44,6 +44,38 @@ function splitPics_(s) {
  * dulu. Nama yang sama dengan huruf besar/kecil berbeda digabung (ejaan yang paling sering dipakai menang).
  */
 function picRoster_(ss) {
+  var names = nameCounter_();
+  PIC_NAMES.forEach(function (n) { splitPics_(n).forEach(function (x) { names.add(x, 1000, 0); }); });
+  issueSheetNames_(ss).forEach(function (name) {
+    var sh = ss.getSheetByName(name);
+    var last = sh.getLastRow();
+    if (last < ROW.DATA_START) return;
+    sh.getRange(ROW.DATA_START, COL.PIC, last - ROW.DATA_START + 1, 1).getDisplayValues().forEach(function (r) {
+      splitPics_(r[0]).forEach(function (x) { names.add(x, 1, 1); });
+    });
+  });
+  return names.list();
+}
+
+/** Nama pelapor yang pernah ditulis tool (dari K / catatan sel K), paling sering dulu. */
+function reporterRoster_(ss) {
+  var names = nameCounter_();
+  issueSheetNames_(ss).forEach(function (name) {
+    var sh = ss.getSheetByName(name);
+    var last = sh.getLastRow();
+    if (last < ROW.DATA_START) return;
+    var range = sh.getRange(ROW.DATA_START, COL.NOTES, last - ROW.DATA_START + 1, 1);
+    var notes = range.getNotes();
+    range.getDisplayValues().forEach(function (r, i) {
+      var n = parseNotesInfo_(r[0], notes[i][0]).reporter;
+      if (n) names.add(n, 1, 1);
+    });
+  });
+  return names.list();
+}
+
+/** Penghitung nama: huruf besar/kecil digabung, ejaan yang paling sering menang; urut paling sering. */
+function nameCounter_() {
   var count = {};
   var forms = {};
   var add = function (name, weight, used) {
@@ -52,19 +84,11 @@ function picRoster_(ss) {
     forms[k][name] = (forms[k][name] || 0) + weight;
     count[k] += used;
   };
-  PIC_NAMES.forEach(function (n) { splitPics_(n).forEach(function (x) { add(x, 1000, 0); }); });
-  issueSheetNames_(ss).forEach(function (name) {
-    var sh = ss.getSheetByName(name);
-    var last = sh.getLastRow();
-    if (last < ROW.DATA_START) return;
-    sh.getRange(ROW.DATA_START, COL.PIC, last - ROW.DATA_START + 1, 1).getDisplayValues().forEach(function (r) {
-      splitPics_(r[0]).forEach(function (x) { add(x, 1, 1); });
-    });
-  });
-  return Object.keys(forms).map(function (k) {
+  var list = function () { return Object.keys(forms).map(function (k) {
     var best = Object.keys(forms[k]).sort(function (a, b) { return forms[k][b] - forms[k][a]; })[0];
     return { name: best, count: count[k] };
-  }).sort(function (a, b) { return b.count - a.count || a.name.toLowerCase().localeCompare(b.name.toLowerCase()); });
+  }).sort(function (a, b) { return b.count - a.count || a.name.toLowerCase().localeCompare(b.name.toLowerCase()); }); };
+  return { add: add, list: list };
 }
 
 // ---------- Rute proyek ----------
@@ -352,13 +376,15 @@ function toView_(r) {
     type: r.type,
     discipline: r.discipline,
     pic: r.pic,
+    reporter: r.reporter || '',
     lineStatus: r.lineStatus,
     handling: r.handling,
     skip: r.skip,
     writable: r.writable,
     duplicateOf: r.duplicateOf || null,
     translated: !!r.tr,
-    cells: { C: row.values.MACHINE, D: row.values.DESC, K: row.values.NOTES },
+    // K tanpa pelapor: UI menambahkan pelapor yang dipilih dengan aturan yang sama (withReporter_).
+    cells: { C: row.values.MACHINE, D: row.values.DESC, K: row.notesBase },
     empty: row.empty.map(function (k) { return { key: k, col: colLetter_(COL[k]) }; }),
     warnings: r.warnings.map(function (w) { return { col: w.col ? colLetter_(COL[w.col]) : '', msg: w.msg }; }),
     include: r.writable && !r.sheetError && !r.skip && !r.duplicateOf
@@ -385,7 +411,11 @@ function importWeChat(text, otherSheet, picks, opts) {
     var written = [];
     var errors = [];
     var recs = parseReports(text).filter(function (rec) { return chosen.hasOwnProperty(rec.id); });
-    recs.forEach(function (rec) { applyDisciplineChoice_(rec, chosen[rec.id].discipline); });
+    recs.forEach(function (rec) {
+      applyDisciplineChoice_(rec, chosen[rec.id].discipline);
+      // Pelapor yang dipilih/diubah di pratinjau (nama apa adanya, tidak diterjemahkan).
+      if (chosen[rec.id].reporter != null) rec.reporter = String(chosen[rec.id].reporter).replace(/\s+/g, ' ').trim().slice(0, 60);
+    });
     // Terjemahan hasil parser + isian yang diedit, semuanya SEBELUM menulis.
     var items = recs.filter(function (r) { return r.writable; })
       .map(function (r) { return { rec: r, cells: chosen[r.id].cells || {} }; });

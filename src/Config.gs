@@ -44,6 +44,7 @@ var DISCIPLINES = ['Machine', 'Operation', 'Product Item', 'MES'];
 // Jenis yang tidak ada di sini: H dikosongkan + peringatan. Tambahkan HANYA yang sudah pasti.
 var DISCIPLINE_MAP = {
   'mesin': 'Machine',
+  'masalahmesin': 'Machine',   // "Masalah Mesin" (laporan Limo 7)
   'machine': 'Machine',
   'operation': 'Operation',
   'productitem': 'Product Item',

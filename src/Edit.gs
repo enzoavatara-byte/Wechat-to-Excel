@@ -21,9 +21,12 @@ function parseEditDate_(s) {
   return m && isValidDate_(+m[1], +m[2], +m[3]) ? { y: +m[1], m: +m[2], d: +m[3] } : null;
 }
 
-/** "E245 - Finishing" -> { project: 'E245', process: 'Finishing' }, atau null. */
+/**
+ * "E245 - Finishing" -> { project: 'E245', process: 'Finishing' }, atau null. Dipotong di " - " TERAKHIR,
+ * karena nama proyek boleh berisi " - " ("DJ2518 - VFLimo7 - cell online Line B").
+ */
 function splitMachine_(s) {
-  var m = /^(.+?)\s+-\s+(.+)$/.exec(String(s).trim());
+  var m = /^(.+)\s+-\s+(.+)$/.exec(String(s).trim());
   return m ? { project: m[1].trim(), process: m[2].trim() } : null;
 }
 

@@ -21,7 +21,7 @@ function normDate_(shown) {
 }
 
 /**
- * Jam mulai, downtime, jenis & status dari kolom K (Notes) yang ditulis tool, dalam format apa pun:
+ * Jam mulai, downtime, jenis, status & pelapor dari kolom K (Notes) yang ditulis tool, dalam format apa pun:
  * "开始：18:05；影响时长：18分钟…\n(…Start: 18:05; Downtime: 18 min; …)" atau "Mulai: 18:05 | Durasi: 18 menit | …".
  * Teks Bahasa Indonesia dari catatan sel K ("Asli (ID): … | Lini: Mesin pulih | …") didahulukan karena
  * lebih mudah dibaca. Notes buatan manajer (teks bebas) -> semua kosong.
@@ -42,7 +42,8 @@ function parseNotesInfo_(k, note) {
     unverified: /unverified|belum diverifikasi|未核实/.test(s),
     type: first(/Jenis:\s*([^|\n]+)/, /Jenis:\s*([^|\n]+)/, /Type:\s*([^;)\n]+)/),
     lineStatus: first(/Lini:\s*([^|\n]+)/, /Lini:\s*([^|\n]+)/, /Line status:\s*([^;)\n]+)/),
-    handling: first(/Penanganan:\s*([^|\n]+)/, /Penanganan:\s*([^|\n]+)/, /Handling:\s*([^;)\n]+)/)
+    handling: first(/Penanganan:\s*([^|\n]+)/, /Penanganan:\s*([^|\n]+)/, /Handling:\s*([^;)\n]+)/),
+    reporter: pick(n, /Pelapor:\s*([^|\n]+)/) || pick(s, /(?:Pelapor|Reporter):\s*([^|;)\n]+)/) || pick(s, /报告人：\s*([^；\n]+)/)
   };
 }
 
@@ -89,6 +90,7 @@ function completeRow_(name, sheetId, row, cur, notes) {
     type: info.type,
     lineStatus: info.lineStatus,
     handling: info.handling,
+    reporter: info.reporter,
     process: machineSrc ? machineSrc.process : '',
     need: need.map(function (k) { return { key: k, col: colLetter_(COL[k]) }; })
   };

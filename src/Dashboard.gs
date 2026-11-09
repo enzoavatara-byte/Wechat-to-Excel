@@ -26,6 +26,9 @@ function getDashboard() {
         machine: r.machineOrig || r.machine,
         problem: r.descOrig || r.description,
         pic: r.pic,
+        reporter: r.reporter,
+        type: r.type,
+        lineStatus: r.lineStatus,
         complete: !isEmpty_(r.rootCause) && !isEmpty_(r.solution),
         need: r.need.map(function (n) { return n.col; })
       });

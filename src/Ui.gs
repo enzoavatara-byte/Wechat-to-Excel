@@ -131,6 +131,7 @@ function getInitData() {
     disciplines: DISCIPLINES,
     headerRow: ROW.HEADER,
     roster: picRoster_(ss),
+    reporters: reporterRoster_(ss),
     version: APP_VERSION
   };
 }

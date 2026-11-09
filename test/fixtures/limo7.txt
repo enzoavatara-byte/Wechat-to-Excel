@@ -1,0 +1,13 @@
+Raihan Farhan
+2026/11/09  9:05
+①Tingkat saat ini: L1
+②Nama proyek: DJ2518 - VFLimo7
+③Nama Proses:cell online Line B
+④Waktu kejadian:2026.11.9/ 07:30
+⑤Deskripsi masalah: conveyor cell online line B stuck
+⑥-1Jenis masalah: Masalah Mesin
+⑥-2Respond PIC: @牧師 imam  @Iqbal 
+⑦-1Status lini produksi: Machine pulih
+⑦-2StatusPenanganan : selesai di tangani 
+⑧WaktuPenanganan:2026.11.9/09:05
+⑨Durasi dampak: 95 menit

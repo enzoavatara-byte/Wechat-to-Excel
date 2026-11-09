@@ -89,12 +89,16 @@ test('fixture: nilai kolom G/J berupa nomor seri + daftar kolom kosong', () => {
   assert.equal(ok.values.END_TIME, (20 * 60 + 23) / 1440);
   assert.equal(ok.values.DISCIPLINE, 'Machine');
   assert.deepEqual(Array.from(ok.empty), ['ROOT_CAUSE', 'SOLUTION']);
-  assert.deepEqual(plain(ok.notes), {}); // tanpa terjemahan: tidak ada catatan sel
+  // Tanpa terjemahan: K ringkas; info lengkap laporan di catatan sel K, tidak ada catatan C/D.
+  assert.equal(ok.values.NOTES, 'Mulai: 20:15 | Durasi: 8 menit');
+  assert.deepEqual(plain(ok.notes), { MACHINE: '', DESC: '',
+    NOTES: 'Asli (ID): Level: L1 | Jenis: Mesin | Lini: Mesin pulih | Penanganan: Selesai penanganan' });
 
   const co = gas.buildRow_(byStart(recs, '18:05'));
   assert.deepEqual(Array.from(co.empty), ['ROOT_CAUSE', 'SOLUTION', 'DISCIPLINE']);
-  assert.equal(co.values.NOTES,
-    'Level: L1 | Mulai: 18:05 | Durasi: 18 menit | Jenis: Change over | Lini: Mesin pulih | Penanganan: Selesai penanganan\n' +
+  assert.equal(co.values.NOTES, 'Mulai: 18:05 | Durasi: 18 menit | Jenis: Change over'); // jenis karena H kosong
+  assert.equal(co.notes.NOTES,
+    'Asli (ID): Level: L1 | Jenis: Change over | Lini: Mesin pulih | Penanganan: Selesai penanganan\n' +
     '⚠ ⑥-1 jenis "Change over" belum dipetakan ke Discipline');
 });
 
@@ -306,7 +310,8 @@ test('Discipline dipilih manual di pratinjau', () => {
   assert.equal(r.discipline, 'Operation');
   assert.equal(r.missing.DISCIPLINE, false);
   assert.deepEqual(plain(r.warnings), []);
-  assert.ok(gas.buildNotes_(r).includes('Discipline dipilih manual'));
+  assert.ok(gas.buildRow_(r).notes.NOTES.includes('Discipline dipilih manual'));
+  assert.equal(gas.buildNotes_(r), 'Mulai: 18:05 | Durasi: 18 menit'); // jenis tidak perlu lagi: sudah ada di H
   assert.deepEqual(Array.from(gas.buildRow_(r).empty), ['ROOT_CAUSE', 'SOLUTION']);
 
   const bad = gas.applyDisciplineChoice_(co(), 'Bukan dropdown');
