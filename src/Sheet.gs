@@ -44,6 +44,8 @@ function splitPics_(s) {
  * dulu. Nama yang sama dengan huruf besar/kecil berbeda digabung (ejaan yang paling sering dipakai menang).
  */
 function picRoster_(ss) {
+  var list = picList_(ss);
+  if (list) return list.names.map(function (n) { return { name: n, count: 0 }; });
   var names = nameCounter_();
   PIC_NAMES.forEach(function (n) { splitPics_(n).forEach(function (x) { names.add(x, 1000, 0); }); });
   issueSheetNames_(ss).forEach(function (name) {
@@ -55,6 +57,231 @@ function picRoster_(ss) {
     });
   });
   return names.list();
+}
+
+// ---------- Daftar PIC (sheet yang diatur sendiri) ----------
+
+var PIC_HEADERS = ['Nama PIC', 'Nama lain di WeChat (pisahkan koma)', 'Keterangan'];
+
+/**
+ * Isi sheet Daftar PIC: { names: [nama kolom A, urut sheet], alias: {nama/alias huruf kecil -> nama A} },
+ * atau null kalau sheet tidak ada / belum berisi nama (pemilih kembali ke mode otomatis).
+ */
+function picList_(ss) {
+  var sh = ss.getSheetByName(PIC_SHEET);
+  if (!sh || sh.getLastRow() < 2) return null;
+  var names = [];
+  var alias = {};
+  sh.getRange(2, 1, sh.getLastRow() - 1, 2).getDisplayValues().forEach(function (r) {
+    var n = String(r[0]).replace(/\s+/g, ' ').trim();
+    if (!n || isBlank_(n) || alias.hasOwnProperty(n.toLowerCase())) return;
+    names.push(n);
+    alias[n.toLowerCase()] = n;
+    splitPics_(r[1]).forEach(function (a) {
+      if (!alias.hasOwnProperty(a.toLowerCase())) alias[a.toLowerCase()] = n;
+    });
+  });
+  return names.length ? { names: names, alias: alias } : null;
+}
+
+/** "牧師 imam, Iqbal" -> "Imam, Iqbal" kalau "牧師 imam" tercatat sebagai nama lain dari "Imam". */
+function mapPics_(pic, list) {
+  if (!list || !pic) return pic;
+  var seen = {};
+  return splitPics_(pic).map(function (n) { return list.alias[n.toLowerCase()] || n; })
+    .filter(function (n) { var k = n.toLowerCase(); if (seen[k]) return false; seen[k] = true; return true; })
+    .join(', ');
+}
+
+/** Nama PIC & pelapor hasil parser diganti ke nama di Daftar PIC (kalau tercatat sebagai nama lain). */
+function applyPicList_(recs, list) {
+  if (!list) return recs;
+  recs.forEach(function (r) {
+    r.pic = mapPics_(r.pic, list);
+    if (r.reporter) r.reporter = list.alias[r.reporter.toLowerCase()] || r.reporter;
+  });
+  return recs;
+}
+
+function picListInfo_(ss) {
+  var sh = ss.getSheetByName(PIC_SHEET);
+  return sh ? { managed: true, url: ss.getUrl().replace(/#.*$/, '') + '#gid=' + sh.getSheetId() } : { managed: false, url: '' };
+}
+
+/**
+ * Buat sheet Daftar PIC kalau belum ada, langsung diisi nama yang sekarang dipakai (kolom I, paling sering
+ * dulu) supaya tinggal dihapus / dirapikan. Tidak pernah menimpa sheet yang sudah ada.
+ */
+function openPicList() {
+  var ss = ss_();
+  var sh = ss.getSheetByName(PIC_SHEET);
+  var created = false;
+  if (!sh) {
+    var lock = LockService.getScriptLock();
+    if (!lock.tryLock(LOCK_TIMEOUT_MS)) throw new Error('Masih ada proses lain yang berjalan. Coba lagi beberapa detik.');
+    try {
+      var names = picRoster_(ss).map(function (p) { return [asText_(p.name), '', '']; });
+      sh = ss.insertSheet(PIC_SHEET, ss.getSheets().length);
+      sh.getRange(1, 1, 1, PIC_HEADERS.length).setValues([PIC_HEADERS]).setFontWeight('bold').setBackground('#C6D9F1');
+      sh.getRange(1, 1).setNote('Satu nama per baris; urutan di sini = urutan di pemilih PIC. Hapus baris untuk ' +
+        'menghilangkan nama. Kolom B: nama lain orang itu di WeChat (mis. "牧師 imam, imam 學者們"), saat impor ' +
+        'otomatis diganti ke nama di kolom A. Sheet kosong = nama diambil otomatis dari kolom I.');
+      if (names.length) sh.getRange(2, 1, names.length, PIC_HEADERS.length).setValues(names);
+      sh.setFrozenRows(1);
+      sh.setColumnWidth(1, 220);
+      sh.setColumnWidth(2, 320);
+      sh.setColumnWidth(3, 220);
+      created = true;
+    } finally {
+      lock.releaseLock();
+    }
+  }
+  var info = picListInfo_(ss);
+  return { url: info.url, created: created, count: Math.max(0, sh.getLastRow() - 1) };
+}
+
+/** "+ Nama lain" di pemilih: nama baru ikut dicatat di Daftar PIC (hanya kalau sheet itu sudah dipakai). */
+function addPicName(name) {
+  name = String(name || '').replace(/\s+/g, ' ').trim();
+  if (!name) throw new Error('Nama kosong.');
+  var ss = ss_();
+  var sh = ss.getSheetByName(PIC_SHEET);
+  if (!sh) return { added: false, managed: false, name: name };
+  var list = picList_(ss);
+  if (list && list.alias.hasOwnProperty(name.toLowerCase())) return { added: false, managed: true, name: list.alias[name.toLowerCase()] };
+  var row = sh.getLastRow() + 1;
+  if (row > sh.getMaxRows()) sh.insertRowsAfter(sh.getMaxRows(), 50);
+  sh.getRange(row, 1).setValue(asText_(name));
+  return { added: true, managed: true, name: name };
+}
+
+// ---------- Daftar Mesin (sheet yang diatur sendiri) ----------
+
+var MACHINE_HEADERS = ['中文', 'English', 'Proyek (kosong = semua proyek)', 'Nama di laporan ③ (pisahkan koma)'];
+
+/**
+ * Isi sheet Daftar Mesin: [{ row, zh, en, project (kunci), projectText, keys: {typeKey_: true} }], atau null.
+ * Kunci cocok = kolom English + semua nama di kolom D, huruf besar/kecil, spasi, strip, titik diabaikan.
+ */
+function machineList_(ss) {
+  var sh = ss.getSheetByName(MACHINE_SHEET);
+  if (!sh || sh.getLastRow() < 2) return null;
+  var out = [];
+  sh.getRange(2, 1, sh.getLastRow() - 1, 4).getDisplayValues().forEach(function (r, i) {
+    var zh = String(r[0]).trim(), en = String(r[1]).trim();
+    if (!zh && !en) return;
+    var keys = {};
+    [en].concat(splitPics_(r[3])).forEach(function (a) { var k = typeKey_(a); if (k) keys[k] = true; });
+    out.push({ row: i + 2, zh: zh || en, en: en || zh, project: projectKey_(r[2]), projectText: String(r[2]).trim(), keys: keys });
+  });
+  return out.length ? out : null;
+}
+
+/** Entri Daftar Mesin untuk ③ laporan ini; entri khusus proyek menang atas entri umum. */
+function findMachine_(list, project, process) {
+  if (!list || !process) return null;
+  var k = typeKey_(process);
+  var pk = projectKeys_(project);
+  var hit = null;
+  list.forEach(function (m) {
+    if (!m.keys[k] || (m.project && pk.indexOf(m.project) === -1)) return;
+    if (!hit || (m.project && !hit.project)) hit = m;
+  });
+  return hit;
+}
+
+function applyMachineList_(recs, list) {
+  if (!list) return recs;
+  recs.forEach(function (r) {
+    r.machineEntry = findMachine_(list, r.project, r.process);
+    if (!r.machineEntry && r.process) {
+      warn_(r, null, '③ "' + r.process + '" belum ada di Daftar Mesin: pilih mesin/line di layar Periksa (pilihan dipelajari untuk laporan berikutnya)');
+    }
+  });
+  return recs;
+}
+
+/** Pilihan untuk UI: entri Daftar Mesin tanpa kunci internal. */
+function machineOptions_(list) {
+  return (list || []).map(function (m) { return { row: m.row, zh: m.zh, en: m.en, project: m.project, projectText: m.projectText }; });
+}
+
+function machineListInfo_(ss) {
+  var sh = ss.getSheetByName(MACHINE_SHEET);
+  return sh ? { managed: true, url: ss.getUrl().replace(/#.*$/, '') + '#gid=' + sh.getSheetId() } : { managed: false, url: '' };
+}
+
+/** Nama ③ yang dipilih manual ke entri ini ditambahkan ke kolom D, supaya laporan berikutnya cocok otomatis. */
+function learnMachineAliases_(ss, learns) {
+  var sh = ss.getSheetByName(MACHINE_SHEET);
+  if (!sh) return;
+  var byRow = {};
+  learns.forEach(function (l) {
+    if (!l.alias || l.entry.keys[typeKey_(l.alias)]) return;
+    (byRow[l.entry.row] = byRow[l.entry.row] || []).push(l.alias);
+  });
+  Object.keys(byRow).forEach(function (row) {
+    var cell = sh.getRange(Number(row), 4);
+    var have = splitPics_(cell.getDisplayValues()[0][0]);
+    byRow[row].forEach(function (a) { if (!have.some(function (h) { return typeKey_(h) === typeKey_(a); })) have.push(a); });
+    cell.setValue(asText_(have.join(', ')));
+  });
+}
+
+/**
+ * Buat sheet Daftar Mesin kalau belum ada, diisi semua nama Machine (C) dua bahasa yang sudah dipakai
+ * (satu baris per nama English, ejaan Mandarin yang paling sering dipakai, nama ③ asli dari catatan sel
+ * sebagai nama di laporan). Tinggal dirapikan: hapus yang salah, perbaiki Mandarinnya.
+ */
+function openMachineList() {
+  var ss = ss_();
+  var sh = ss.getSheetByName(MACHINE_SHEET);
+  var created = false;
+  if (!sh) {
+    var lock = LockService.getScriptLock();
+    if (!lock.tryLock(LOCK_TIMEOUT_MS)) throw new Error('Masih ada proses lain yang berjalan. Coba lagi beberapa detik.');
+    try {
+      var byKey = {};
+      var order = [];
+      issueSheetNames_(ss).forEach(function (name) {
+        var s = ss.getSheetByName(name);
+        var last = s.getLastRow();
+        if (last < ROW.DATA_START) return;
+        var range = s.getRange(ROW.DATA_START, COL.MACHINE, last - ROW.DATA_START + 1, 1);
+        var notes = range.getNotes();
+        range.getDisplayValues().forEach(function (v, i) {
+          var c = String(v[0]).trim();
+          var j = c.indexOf('\n(');
+          if (j === -1 || !/\)$/.test(c)) return;
+          var zh = c.slice(0, j).trim(), en = c.slice(j + 2, -1).trim();
+          var k = typeKey_(en);
+          if (!zh || !k) return;
+          if (!byKey[k]) { byKey[k] = { en: en, zh: {}, alias: [], n: 0 }; order.push(k); }
+          var e = byKey[k];
+          e.n++;
+          e.zh[zh] = (e.zh[zh] || 0) + 1;
+          var sm = splitMachine_(originalFromNote_(notes[i][0]) || '');
+          if (sm && typeKey_(sm.process) !== k && e.alias.indexOf(sm.process) === -1) e.alias.push(sm.process);
+        });
+      });
+      var rows = order.map(function (k) { return byKey[k]; }).sort(function (a, b) { return b.n - a.n; }).map(function (e) {
+        var zh = Object.keys(e.zh).sort(function (a, b) { return e.zh[b] - e.zh[a]; })[0];
+        return [asText_(zh), asText_(e.en), '', asText_(e.alias.join(', '))];
+      });
+      sh = ss.insertSheet(MACHINE_SHEET, ss.getSheets().length);
+      sh.getRange(1, 1, 1, MACHINE_HEADERS.length).setValues([MACHINE_HEADERS]).setFontWeight('bold').setBackground('#C6D9F1');
+      sh.getRange(1, 1).setNote('Satu mesin/line per baris. Kolom Machine (C) ditulis "中文" lalu "(English)" persis seperti di ' +
+        'sini. Proyek: kosong = semua proyek, atau kode seperti DJ2518. Kolom D: nama yang ditulis operator di ③ ' +
+        '(pisahkan koma); nama yang Anda pilih manual di layar Periksa otomatis ditambahkan ke sini.');
+      if (rows.length) sh.getRange(2, 1, rows.length, MACHINE_HEADERS.length).setValues(rows);
+      sh.setFrozenRows(1);
+      [[1, 220], [2, 260], [3, 170], [4, 320]].forEach(function (w) { sh.setColumnWidth(w[0], w[1]); });
+      created = true;
+    } finally {
+      lock.releaseLock();
+    }
+  }
+  return { url: machineListInfo_(ss).url, created: created, count: Math.max(0, sh.getLastRow() - 1), machines: machineOptions_(machineList_(ss)) };
 }
 
 /** Nama pelapor yang pernah ditulis tool (dari K / catatan sel K), paling sering dulu. */
@@ -314,6 +541,8 @@ function previewWeChat(text, otherSheet, opts) {
   var recs = parseReports(text);
   var routes = projectRoutes_(ss);
   var deleted = deletedKeys_(ss);
+  applyPicList_(recs, picList_(ss));
+  applyMachineList_(recs, machineList_(ss));
   var info = {};
   recs.forEach(function (r) {
     if (deleted.hasOwnProperty(r.key)) r.deletedBefore = deleted[r.key];
@@ -401,6 +630,7 @@ function toView_(r) {
     writable: r.writable,
     duplicateOf: r.duplicateOf || null,
     deletedBefore: r.deletedBefore || null, // pernah dihapus lewat tool (WeChat_Deleted)
+    machineRow: r.machineEntry ? r.machineEntry.row : null, // baris Daftar Mesin yang dipakai untuk C
     translated: !!r.tr,
     // K tanpa pelapor: UI menambahkan pelapor yang dipilih dengan aturan yang sama (withReporter_).
     cells: { C: row.values.MACHINE, D: row.values.DESC, K: row.notesBase },
@@ -429,11 +659,22 @@ function importWeChat(text, otherSheet, picks, opts) {
     var nextFrom = {};
     var written = [];
     var errors = [];
-    var recs = parseReports(text).filter(function (rec) { return chosen.hasOwnProperty(rec.id); });
+    var mlist = machineList_(ss);
+    var learns = [];
+    var recs = applyMachineList_(applyPicList_(parseReports(text), picList_(ss)), mlist)
+      .filter(function (rec) { return chosen.hasOwnProperty(rec.id); });
     recs.forEach(function (rec) {
       applyDisciplineChoice_(rec, chosen[rec.id].discipline);
       // Pelapor yang dipilih/diubah di pratinjau (nama apa adanya, tidak diterjemahkan).
       if (chosen[rec.id].reporter != null) rec.reporter = String(chosen[rec.id].reporter).replace(/\s+/g, ' ').trim().slice(0, 60);
+      // Mesin/line yang dipilih dari Daftar Mesin (nomor baris di sheet itu).
+      var mp = chosen[rec.id].machine;
+      var entry = mp != null && mp !== '' && mlist ? mlist.filter(function (m) { return m.row === Number(mp); })[0] : null;
+      if (entry) {
+        rec.machineEntry = entry;
+        rec.warnings = rec.warnings.filter(function (w) { return !/belum ada di Daftar Mesin/.test(w.msg); });
+        learns.push({ id: rec.id, entry: entry, alias: rec.process });
+      }
     });
     // Terjemahan hasil parser + isian yang diedit, semuanya SEBELUM menulis.
     var items = recs.filter(function (r) { return r.writable; })
@@ -476,6 +717,9 @@ function importWeChat(text, otherSheet, picks, opts) {
       view.no = res.no;
       written.push(view);
     });
+    var done = {};
+    written.forEach(function (w) { done[w.id] = true; });
+    learnMachineAliases_(ss, learns.filter(function (l) { return done[l.id]; }));
     SpreadsheetApp.flush();
     return { written: written, errors: errors, url: ss.getUrl() };
   } finally {

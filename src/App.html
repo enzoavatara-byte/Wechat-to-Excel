@@ -17,6 +17,8 @@
     edits: {},       // id -> { KEY_KOLOM: isi sel yang diubah manual } (lihat Edit.gs)
     editing: {},     // id -> kartu sedang dalam mode edit?
     reporter: {},    // id -> pelapor yang dipilih manual (menimpa nama dari header chat)
+    machinePick: {}, // id -> baris Daftar Mesin yang dipilih untuk Machine (C)
+    machineListInfo: null, // { managed, url } setelah daftar dibuat dari halaman ini
     written: [],     // hasil impor terakhir (untuk teks chat)
     extraNames: { pic: [], rep: [] }, // nama baru yang diketik di sesi ini
     cmp: null,       // hasil listIncomplete + filter
@@ -142,9 +144,10 @@
   function setBadge(n) { $('cmp-badge').textContent = n ? n : ''; }
   var toastTimer = null;
   /** Pesan singkat di bawah layar (tanpa menggulung halaman). */
-  function toast(msg, kind) {
+  function toast(msg, kind) { toastHtml(esc(msg), kind); }
+  function toastHtml(html, kind) {
     var t = $('toast');
-    t.textContent = msg;
+    t.innerHTML = html;
     t.className = 'toast ' + (kind || 'ok');
     clearTimeout(toastTimer);
     toastTimer = setTimeout(function () { t.classList.add('hidden'); }, 6000);
@@ -454,6 +457,7 @@
       state.edits = {};
       state.editing = {};
       state.reporter = {};
+      state.machinePick = {};
       p.records.forEach(function (r) { state.sel[r.id] = r.include; state.disc[r.id] = r.discipline; });
       renderPreview();
       show('preview');
@@ -513,7 +517,7 @@
     if (r.deletedBefore) tags.push('<span class="tag amber">pernah dihapus ' + esc(r.deletedBefore.at) + '</span>');
     if (r.sheetError) tags.push('<span class="tag red">' + esc(r.sheetError) + '</span>');
     else if (!r.writable) tags.push('<span class="tag red">tidak bisa ditulis</span>');
-    var nEdit = Object.keys(changed(r)).length + (reporterChanged(r) ? 1 : 0);
+    var nEdit = Object.keys(changed(r)).length + (reporterChanged(r) ? 1 : 0) + (machineChanged(r) ? 1 : 0);
     if (nEdit) tags.push('<span class="tag blue">✎ ' + nEdit + ' diubah</span>');
     tags.push('<span class="tag outline">→ ' + esc(r.sheet) + '</span>');
     return tags.join('');
@@ -543,7 +547,7 @@
       '<div class="rec-body">' +
         previewStrip(r) +
         problemBox(r.description, val(r, 'DESC'), 'Masalah (D)') +
-        biField('Machine (C)', val(r, 'MACHINE'), r.translated && r.machine) +
+        machineField(r, can) +
         '<div class="field"><div class="k">Discipline (H)</div><div class="v">' + disciplineSelect(r, can) + '</div></div>' +
         picker('pic', splitNames(val(r, 'PIC')), !can) +
         (!r.reporter ? picker('rep', repList(r), !can) : '') +
@@ -644,8 +648,83 @@
         var c = changed(r);
         if (Object.keys(c).length) p.cells = c;
         if (reporterChanged(r)) p.reporter = reporterOf(r);
+        if (machineChanged(r)) p.machine = machineRowOf(r);
         return p;
       });
+  }
+
+  // ---------- Daftar Mesin: Machine (C) dipilih dari daftar ----------
+  function machineInfo() {
+    return state.machineListInfo || (state.init && state.init.machineList) || (state.cmp && state.cmp.machineList) || { managed: false, url: '' };
+  }
+  function machines() { return (state.init && state.init.machines) || (state.cmp && state.cmp.machines) || []; }
+  function machineByRow(row) { return machines().filter(function (m) { return m.row === row; })[0] || null; }
+  function machineText(m) { return m.zh + '\n(' + m.en + ')'; }
+  /** Sama dengan projectKeys_ (Parser.gs). */
+  function projKeys(p) {
+    var key = function (s) { return String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, ''); };
+    return [p].concat(String(p || '').split(/\s+[-\u2013\u2014]\s+/)).map(key).filter(Boolean);
+  }
+  /** Entri untuk proyek ini: entri umum (kolom Proyek kosong) + entri proyek itu. */
+  function machineOptionsFor(project) {
+    var pk = projKeys(project);
+    return machines().filter(function (m) { return !m.project || pk.indexOf(m.project) !== -1; });
+  }
+  function machineRowOf(r) { return state.machinePick.hasOwnProperty(r.id) ? state.machinePick[r.id] : (r.machineRow || ''); }
+  function machineChanged(r) { return state.machinePick.hasOwnProperty(r.id) && state.machinePick[r.id] !== (r.machineRow || ''); }
+  function machineManage(disabled) {
+    if (disabled) return '';
+    var info = machineInfo();
+    return info.url ? '<a class="link small" href="' + esc(info.url) + '" target="_blank" rel="noopener">⚙ Atur daftar ↗</a>'
+      : '<button type="button" class="link small mach-manage">⚙ Buat daftar mesin</button>';
+  }
+  function machineOptionsHtml(opts, cur) {
+    return opts.map(function (m) {
+      return '<option value="' + m.row + '"' + (m.row === cur ? ' selected' : '') + '>' + esc(m.en + ' · ' + m.zh) + '</option>';
+    }).join('');
+  }
+
+  /** Periksa: pilih mesin/line dari Daftar Mesin; di bawahnya isi sel C yang akan ditulis. */
+  function machineField(r, can) {
+    var opts = machineOptionsFor(r.project), cur = machineRowOf(r);
+    var sel = opts.length ? '<select class="mach' + (cur ? '' : ' is-empty') + '" data-id="' + r.id + '"' + (can ? '' : ' disabled') + '>' +
+      (cur ? '' : '<option value="">— pilih mesin / line —</option>') + machineOptionsHtml(opts, cur) + '</select>' : '';
+    var v = val(r, 'MACHINE'), i = v.indexOf('\n(');
+    var shown = !v ? empty() : i === -1 ? esc(v)
+      : '<span class="zh">' + esc(v.slice(0, i)) + '</span><span class="en">' + esc(v.slice(i + 1)) + '</span>';
+    var orig = r.machine && v !== r.machine ? '<span class="orig">Asli: ' + esc(r.machine) + '</span>' : '';
+    return '<div class="field machine-slot"><div class="label-row"><span class="k">Machine (C)</span>' + machineManage(!can) + '</div>' +
+      sel + '<div class="v bi">' + shown + orig + '</div></div>';
+  }
+
+  /** Lengkapi: ganti Machine (C) ke entri Daftar Mesin. */
+  function cmpMachineSelect(r) {
+    var opts = machineOptionsFor(r.project);
+    if (!opts.length) {
+      return '<div class="field"><div class="label-row"><span class="k">Mesin / line (C)</span>' + machineManage(false) + '</div>' +
+        '<p class="hint">' + (machineInfo().managed ? 'Belum ada mesin untuk proyek ini di Daftar Mesin.' : 'Pilih dari daftar supaya nama mesin seragam.') + '</p></div>';
+    }
+    var cur = (opts.filter(function (m) { return machineText(m) === r.machine; })[0] || {}).row;
+    return '<div class="field"><div class="label-row"><label class="k">Mesin / line (C)</label>' + machineManage(false) + '</div>' +
+      '<select class="cmp-input mach-cmp" data-name="machine"><option value="">— tetap seperti sekarang —</option>' +
+      machineOptionsHtml(opts, cur) + '</select></div>';
+  }
+
+  /** "⚙ Buat daftar mesin": sheet Daftar Mesin dibuat dari nama Machine yang sudah dipakai. */
+  function manageMachines(btn) {
+    busy(btn, true, 'Menyiapkan…');
+    call('openMachineList').then(function (res) {
+      state.machineListInfo = { managed: true, url: res.url };
+      [state.init, state.cmp].forEach(function (o) { if (o) { o.machines = res.machines; o.machineList = state.machineListInfo; } });
+      if (state.preview) renderCards();
+      if (state.cmp && state.view === 'complete') { var d = cmpDrafts(); renderComplete(); restoreDrafts(d); }
+      toastHtml((res.created ? 'Sheet “Daftar Mesin” dibuat dari ' + res.count + ' nama Machine yang sudah dipakai. ' : '') +
+        '<a href="' + esc(res.url) + '" target="_blank" rel="noopener">Buka Daftar Mesin ↗</a> · rapikan di sana (hapus yang salah, ' +
+        'perbaiki Mandarinnya), lalu muat ulang halaman ini.');
+    }).catch(function (e) {
+      busy(btn, false);
+      toast('Gagal menyiapkan Daftar Mesin: ' + cleanErr(e), 'err');
+    });
   }
 
   // ---------- Pemilih nama (PIC: boleh banyak; pelapor: satu) ----------
@@ -653,7 +732,15 @@
   function reporterChanged(r) { return state.reporter.hasOwnProperty(r.id) && state.reporter[r.id] !== (r.reporter || ''); }
   function repList(r) { var n = reporterOf(r); return n ? [n] : []; }
 
-  /** Nama pilihan: daftar dari sheet (paling sering dipakai dulu) + nama di teks ini + nama baru sesi ini. */
+  /** Sheet "Daftar PIC": { managed: ada?, url }. */
+  function picInfo() {
+    return state.picList || (state.init && state.init.picList) || (state.cmp && state.cmp.picList) || { managed: false, url: '' };
+  }
+
+  /**
+   * Nama pilihan. Daftar PIC dipakai (sheet ada): nama di sheet itu + yang sedang dipilih + nama baru sesi ini.
+   * Belum: nama dari kolom I (paling sering dulu) + nama di teks ini + nama baru sesi ini.
+   */
   function nameList(kind, selected) {
     var out = [], seen = {};
     var add = function (n) {
@@ -664,7 +751,7 @@
     var init = state.init || {}, cmp = state.cmp || {};
     var pics = function () {
       (init.roster || []).concat(cmp.roster || []).forEach(function (p) { add(p.name); });
-      if (state.preview) state.preview.records.forEach(function (r) { splitNames(r.pic).forEach(add); });
+      if (state.preview && !picInfo().managed) state.preview.records.forEach(function (r) { splitNames(r.pic).forEach(add); });
     };
     if (kind === 'rep') {
       (init.reporters || []).forEach(function (p) { add(p.name); });
@@ -688,8 +775,12 @@
     var info = kind === 'pic'
       ? (selected.length ? selected.length + ' dipilih · klik nama untuk pilih / batal' : 'belum ada · klik nama untuk memilih')
       : (selected.length ? 'klik lagi untuk batal' : 'tidak terbaca dari chat · pilih');
+    var pi = picInfo();
+    var manage = kind !== 'pic' || disabled ? ''
+      : pi.url ? ' · <a class="link small" href="' + esc(pi.url) + '" target="_blank" rel="noopener">⚙ Atur daftar ↗</a>'
+      : ' · <button type="button" class="link small pic-manage">⚙ Atur daftar</button>';
     return '<div class="field wide picker' + (selected.length ? '' : ' is-missing') + '" data-kind="' + kind + '">' +
-      '<div class="label-row"><span class="k">' + label + '</span><span class="hint">' + esc(info) + '</span></div>' +
+      '<div class="label-row"><span class="k">' + label + '</span><span class="hint">' + esc(info) + manage + '</span></div>' +
       '<div class="pic-chips">' + (chips || '<span class="muted small">Belum ada nama tersimpan.</span>') + '</div>' +
       (disabled ? '' : '<div class="pic-add"><input type="text" class="pic-new" maxlength="60" placeholder="+ Nama lain" aria-label="Tambah nama">' +
         '<span class="hint">Enter untuk menambah</span></div>') + '</div>';
@@ -721,6 +812,11 @@
     if (!name) return true;
     var art = e.target.closest('.rec'), kind = e.target.closest('.picker').getAttribute('data-kind');
     addName(kind, name);
+    if (kind === 'pic' && picInfo().managed) {
+      call('addPicName', name).then(function (res) {
+        if (res.added) toast('“' + res.name + '” ditambahkan ke sheet Daftar PIC.');
+      }).catch(function (err) { toast('Nama belum tercatat di Daftar PIC: ' + cleanErr(err), 'err'); });
+    }
     var cur = get(art, kind);
     var has = cur.some(function (n) { return n.toLowerCase() === name.toLowerCase(); });
     set(art, kind, has ? cur : (kind === 'pic' ? cur.concat(name) : [name]));
@@ -753,6 +849,9 @@
     swap(art.querySelector('.picker[data-kind="pic"]'), picker('pic', splitNames(val(r, 'PIC')), !can));
     swap(art.querySelector('.picker[data-kind="rep"]'), picker('rep', repList(r), !can));
     swap(art.querySelector('.strip-slot'), previewStrip(r));
+    swap(art.querySelector('.machine-slot'), machineField(r, can));
+    var mta = art.querySelector('[data-edit="MACHINE"]');
+    if (mta && !(state.edits[r.id] && state.edits[r.id].hasOwnProperty('MACHINE'))) mta.value = val(r, 'MACHINE');
     swap(art.querySelector('.notes-k'), biField('Notes (K)', val(r, 'NOTES'), '', 'wide notes-k'));
     var ta = art.querySelector('[data-edit="NOTES"]');
     if (ta && !(state.edits[r.id] && state.edits[r.id].hasOwnProperty('NOTES'))) ta.value = val(r, 'NOTES');
@@ -767,7 +866,8 @@
 
   /** Isi sel hasil parser (yang akan ditulis kalau tidak diedit). K sudah termasuk pelapor terpilih. */
   function defaults(r) {
-    return { MACHINE: r.cells.C || '', DESC: r.cells.D || '', ROOT_CAUSE: '', SOLUTION: '',
+    var m = machineChanged(r) ? machineByRow(machineRowOf(r)) : null;
+    return { MACHINE: m ? machineText(m) : (r.cells.C || ''), DESC: r.cells.D || '', ROOT_CAUSE: '', SOLUTION: '',
       END_TIME: r.end || '', PIC: r.pic || '', DATE: r.date || '', NOTES: withReporter(r.cells.K || '', reporterOf(r)) };
   }
   function val(r, k) {
@@ -823,7 +923,8 @@
   function editForm(r, can) {
     return '<div class="rec-body edit-form">' +
       previewStrip(r) +
-      editText(r, 'MACHINE', 'Machine (C)', 2, r.machine) +
+      machineField(r, can) +
+      editText(r, 'MACHINE', 'Machine (C), teks manual', 2, r.machine) +
       editText(r, 'DESC', 'Deskripsi (D)', 3, r.description) +
       editText(r, 'ROOT_CAUSE', 'Root Cause (E)', 3) +
       editText(r, 'SOLUTION', 'Solution (F)', 3) +
@@ -1215,7 +1316,8 @@
         }).join('') + '</select></div>'
       : field('Discipline (H)', r.discipline);
     var form = done ? '' : '<div class="rec-body cmp-form">' +
-      cmpText('Root Cause (E)', 'rootCause', r.rootCause, r) + cmpText('Solution (F)', 'solution', r.solution, r) + disc +
+      cmpText('Root Cause (E)', 'rootCause', r.rootCause, r) + cmpText('Solution (F)', 'solution', r.solution, r) +
+      cmpMachineSelect(r) + disc +
       picker('pic', splitNames(cmpPicVal(r)), false) + '</div>';
     var foot = done ? '' : '<div class="rec-foot cmp-actions">' +
       '<button type="button" class="btn ghost sm danger cmp-del" title="Hapus baris ini dari sheet">Hapus</button>' +
@@ -1249,9 +1351,11 @@
     Array.prototype.forEach.call(art.querySelectorAll('.cmp-input'), function (el) { item[el.getAttribute('data-name')] = el.value; });
     var pic = cmpPicVal(r);
     if (pic !== (r.pic || '')) { item.pic = pic; item.expect.pic = r.pic; }
-    if (isEmptyStr(item.rootCause) && isEmptyStr(item.solution) && !item.discipline && item.pic === undefined) {
+    var mm = item.machine ? machineByRow(Number(item.machine)) : null;
+    if (!mm || machineText(mm) === r.machine) delete item.machine;
+    if (isEmptyStr(item.rootCause) && isEmptyStr(item.solution) && !item.discipline && item.pic === undefined && !item.machine) {
       status.className = 'cmp-status small warn-text';
-      status.textContent = 'Isi Root Cause, Solution, Discipline, atau ubah PIC dulu.';
+      status.textContent = 'Isi Root Cause, Solution, Discipline, atau ubah PIC / mesin dulu.';
       return;
     }
     status.className = 'cmp-status small muted';
@@ -1356,7 +1460,30 @@
     loadDashboard(); // angka Lengkapi + Ringkasan
   }
 
+  /** "⚙ Atur daftar": buat sheet Daftar PIC (berisi nama yang sekarang dipakai) lalu tawarkan tautannya. */
+  function managePics(btn) {
+    busy(btn, true, 'Menyiapkan…');
+    call('openPicList').then(function (res) {
+      state.picList = { managed: true, url: res.url };
+      if (state.init) state.init.picList = state.picList;
+      if (state.cmp) state.cmp.picList = state.picList;
+      if (state.preview) previewRefreshAll('pic');
+      if (state.cmp) cmpRefreshAll();
+      toastHtml((res.created ? 'Sheet “Daftar PIC” dibuat dengan ' + res.count + ' nama yang sekarang dipakai. ' : '') +
+        '<a href="' + esc(res.url) + '" target="_blank" rel="noopener">Buka Daftar PIC ↗</a> · hapus / tambah baris di sana, lalu muat ulang halaman ini.');
+    }).catch(function (e) {
+      busy(btn, false);
+      toast('Gagal menyiapkan Daftar PIC: ' + cleanErr(e), 'err');
+    });
+  }
+
   // ---------- event ----------
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest('.pic-manage');
+    if (b && !b.disabled) managePics(b);
+    var m = e.target.closest('.mach-manage');
+    if (m && !m.disabled) manageMachines(m);
+  });
   // Semua elemen ber-data-go (tombol header, kartu angka, tombol kosong) -> pindah layar.
   document.addEventListener('click', function (e) {
     var g = e.target.closest('[data-go]');
@@ -1473,6 +1600,9 @@
       state.disc[id] = t.value;
       t.classList.toggle('is-empty', !t.value);
       t.closest('.rec').querySelector('.foot-row .cells').innerHTML = emptyLine(recById(id));
+    } else if (t.classList.contains('mach')) {
+      state.machinePick[id] = t.value ? Number(t.value) : '';
+      refreshCard(t.closest('.rec'), recById(id));
     }
   });
 

@@ -147,6 +147,27 @@ Tombol ✎ kiri atas = Impor, tombol kanan atas (angka merah) = Lengkapi.
    Menu ini hanya mengubah kolom **C, D, E, F, K mulai baris 9** di sheet issue. H (dropdown), I (nama PIC),
    angka, header, dan sel ber-dropdown selalu dilewati, jadi aman walau Anda memilih satu baris penuh.
 
+### 3e. Daftar PIC & Daftar Mesin (diatur sendiri di spreadsheet)
+Menu **WeChat Import → Kelola daftar PIC / Kelola daftar mesin**, atau **⚙ Atur daftar** di layar Periksa/Lengkapi.
+Sheet dibuat sekali, langsung berisi nama yang sudah dipakai, lalu tinggal dirapikan. Setelah mengubah sheet,
+muat ulang halaman web app.
+
+**Daftar PIC**: `Nama PIC | Nama lain di WeChat (pisahkan koma) | Keterangan`
+- Pemilih PIC hanya menampilkan nama di sheet ini, urut seperti di sheet. Hapus baris = nama hilang dari pemilih.
+- Kolom B: nama lain orang itu di WeChat (mis. `牧師 imam, imam 學者們` untuk `Imam`). Saat impor otomatis
+  diganti ke nama di kolom A, jadi kolom I seragam. Berlaku juga untuk pelapor.
+- Nama yang diketik di *+ Nama lain* ikut ditambahkan ke sheet. Sheet dihapus/kosong = kembali otomatis dari kolom I.
+
+**Daftar Mesin**: `中文 | English | Proyek (kosong = semua) | Nama di laporan ③ (pisahkan koma)`
+- Machine (C) ditulis **persis** `中文` lalu `(English)` dari daftar, tanpa terjemahan mesin (dan tanpa awalan
+  proyek, kecuali Anda menulisnya di daftar). Ini juga memperbaiki terjemahan yang salah seperti "Cell" → 手机.
+- ③ laporan dicocokkan ke kolom English atau kolom D (huruf besar/kecil, spasi, strip diabaikan); entri dengan
+  Proyek yang cocok didahulukan. Tidak cocok → peringatan, pilih manual di dropdown *Machine (C)* di layar Periksa.
+- Pilihan manual **dipelajari**: nama ③ itu ditambahkan ke kolom D, jadi laporan berikutnya cocok otomatis.
+- Di Lengkapi, Machine baris lama bisa diganti ke entri daftar; teks asli tetap di catatan sel.
+- Saat dibuat, sheet diisi dari semua Machine dua bahasa yang sudah ada (satu baris per nama English). Ini ikut
+  membawa terjemahan lama yang salah: hapus / perbaiki sekali di sheet.
+
 ### 3d. Menghapus laporan yang salah masuk
 Contoh: pelapor meng-upload laporan yang seharusnya tidak dilaporkan, dan sudah terlanjur diimpor.
 - **Hapus** ada di halaman Selesai (per baris yang baru ditulis) dan di setiap kartu Lengkapi. Klik dua kali
@@ -390,6 +411,9 @@ npm run build   # buat ulang dist/ setelah mengubah src/
   berurutan, tidak menebak tanpa header, K ringkas + pelapor, rute `DJ2518 - VFLimo7`, pelapor dipilih manual,
   terbaca lagi di Lengkapi/Ringkasan).
 - `test/dashboard.test.js`: data halaman Ringkasan.
+- `test/lists.test.js`: Daftar PIC (dibuat dari kolom I, hanya nama di daftar, nama lain di WeChat diganti, tambah
+  nama) dan Daftar Mesin (dibuat dari Machine yang ada, cocok ③ tanpa terjemahan, pilihan manual dipelajari,
+  ganti Machine di Lengkapi).
 - `test/delete.test.js`: hapus baris (laporan terakhir & di tengah, nomor/ID, log WeChat_Deleted, tanda "pernah
   dihapus" saat paste ulang, penolakan tanpa menulis), tanggal dari sel bertanggal asli, E/F berisi `-`.
 - `test/edit.test.js`: *✎ Edit isi sel* (teks Mandarin apa adanya, teks Indonesia diterjemahkan termasuk format C,

@@ -203,6 +203,8 @@
     max-width: min(560px, calc(100% - 32px)); padding: 12px 18px; border-radius: 16px; background: var(--card-2);
     border: 1px solid var(--line-strong); box-shadow: 0 10px 30px rgba(0, 0, 0, .5); font-size: 14px; }
   .toast.ok { border-color: var(--ok); }
+  .toast a { color: var(--primary); font-weight: 600; }
+  .picker .hint .link { font-size: inherit; }
   .toast.err { border-color: var(--ng); color: var(--ng); }
 
   /* ---------- info laporan & masalah ---------- */
@@ -287,6 +289,9 @@
   .field.wide { grid-column: 1 / -1; }
   .field .hint { color: var(--faint); font-size: 12px; margin-top: 4px; }
   select.disc { max-width: 260px; }
+  select.mach { margin-bottom: 8px; }
+  select.mach.is-empty { border-style: dashed; color: var(--muted); }
+  .machine-slot .label-row { margin-bottom: 4px; }
   select.disc.is-empty { border-style: dashed; color: var(--muted); }
   .empty { display: inline-block; border: 1px dashed var(--line-strong); color: var(--faint); padding: 0 8px; border-radius: 6px; font-size: 12.5px; }
   .bi .zh, .bi .en, .bi .orig { display: block; }

@@ -9,6 +9,8 @@ function onOpen() {
     .addItem('Lengkapi Root Cause / Solution…', 'showCompleteDialog')
     .addItem('Buat sheet baru (format manajer)…', 'showNewSheetDialog')
     .addItem('Terjemahkan sel terpilih (中文 + English)', 'translateSelection')
+    .addItem('Kelola daftar PIC', 'showPicList')
+    .addItem('Kelola daftar mesin', 'showMachineList')
     .addSeparator()
     .addItem('Cek setup', 'setup')
     .addToUi();
@@ -51,6 +53,14 @@ function setup() {
   if (sheets.length) ok('Sheet issue (header baris ' + ROW.HEADER + '): ' + sheets.join(', '));
   else bad('Tidak ada sheet dengan header ' + HEADER_CHECK.join(' | ') + ' di baris ' + ROW.HEADER + '. Buat lewat menu WeChat Import → Buat sheet baru.');
 
+  var pl = picList_(ss);
+  if (pl) ok('Daftar PIC: ' + pl.names.length + ' nama dari sheet "' + PIC_SHEET + '"');
+  else ok('Daftar PIC: otomatis dari kolom I (atur sendiri lewat menu WeChat Import → Kelola daftar PIC)');
+
+  var ml = machineList_(ss);
+  if (ml) ok('Daftar Mesin: ' + ml.length + ' mesin/line dari sheet "' + MACHINE_SHEET + '"');
+  else ok('Daftar Mesin: belum ada, Machine (C) diterjemahkan mesin (buat lewat menu WeChat Import → Kelola daftar mesin)');
+
   var routes = projectRoutes_(ss);
   Object.keys(routes).forEach(function (p) {
     var name = routes[p];
@@ -76,6 +86,34 @@ function setup() {
     // Dijalankan dari editor saat spreadsheet tidak terbuka: hasil cukup di Execution log.
   }
   return summary;
+}
+
+/** Menu "Kelola daftar PIC": buat sheet Daftar PIC (berisi nama yang sekarang dipakai) lalu buka. */
+function showPicList() {
+  var res = openPicList();
+  ss_().getSheetByName(PIC_SHEET).activate();
+  try {
+    SpreadsheetApp.getUi().alert('Daftar PIC', (res.created ? 'Sheet "' + PIC_SHEET + '" dibuat dengan ' + res.count + ' nama yang sekarang dipakai. '
+      : 'Sheet "' + PIC_SHEET + '" berisi ' + res.count + ' nama. ') +
+      'Hapus baris untuk menghilangkan nama, tambah baris untuk nama baru. Kolom B: nama lain orang itu di WeChat ' +
+      '(otomatis diganti saat impor).', SpreadsheetApp.getUi().ButtonSet.OK);
+  } catch (e) {
+    // Dijalankan dari editor: cukup sheet-nya dibuka.
+  }
+}
+
+/** Menu "Kelola daftar mesin": buat sheet Daftar Mesin (berisi nama Machine yang sudah dipakai) lalu buka. */
+function showMachineList() {
+  var res = openMachineList();
+  ss_().getSheetByName(MACHINE_SHEET).activate();
+  try {
+    SpreadsheetApp.getUi().alert('Daftar Mesin', (res.created ? 'Sheet "' + MACHINE_SHEET + '" dibuat dari ' + res.count +
+      ' nama Machine yang sudah dipakai. ' : 'Sheet "' + MACHINE_SHEET + '" berisi ' + res.count + ' mesin/line. ') +
+      'Hapus yang salah, perbaiki teks Mandarinnya, gabungkan yang sama. Kolom C ditulis persis seperti di sini.',
+      SpreadsheetApp.getUi().ButtonSet.OK);
+  } catch (e) {
+    // Dijalankan dari editor: cukup sheet-nya dibuka.
+  }
 }
 
 function showImportDialog() {
@@ -131,6 +169,9 @@ function getInitData() {
     disciplines: DISCIPLINES,
     headerRow: ROW.HEADER,
     roster: picRoster_(ss),
+    picList: picListInfo_(ss),
+    machines: machineOptions_(machineList_(ss)),
+    machineList: machineListInfo_(ss),
     reporters: reporterRoster_(ss),
     version: APP_VERSION
   };

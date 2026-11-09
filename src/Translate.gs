@@ -25,6 +25,7 @@ function translateRecords_(recs, translateFn) {
   // Hemat kuota: jenis & status ⑦ hanya diterjemahkan kalau memang ditulis di K (lihat noteExtras_).
   var needed = function (r, f) {
     if (f === 'type') return !r.discipline;
+    if (f === 'process') return !r.machineEntry; // nama dari Daftar Mesin, tidak diterjemahkan
     if (f === 'lineStatus' || f === 'handling') return !isDoneStatus_(r[f]);
     return true;
   };

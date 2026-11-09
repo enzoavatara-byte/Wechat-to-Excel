@@ -98,6 +98,7 @@ function completeRow_(name, sheetId, row, cur, notes) {
     handling: info.handling,
     reporter: info.reporter,
     process: machineSrc ? machineSrc.process : '',
+    project: machineSrc ? machineSrc.project : '',
     need: need.map(function (k) { return { key: k, col: colLetter_(COL[k]) }; })
   };
 }
@@ -137,7 +138,10 @@ function listIncomplete() {
     url: ss.getUrl(),
     translate: TRANSLATE,
     disciplines: DISCIPLINES,
-    roster: picRoster_(ss)
+    roster: picRoster_(ss),
+    picList: picListInfo_(ss),
+    machines: machineOptions_(machineList_(ss)),
+    machineList: machineListInfo_(ss)
   };
 }
 
@@ -183,7 +187,14 @@ function saveCompletion(item) {
     // PIC dari pemilih: nama apa adanya (tidak diterjemahkan), digabung ", ".
     var pic = item.pic == null ? null : splitPics_(item.pic).join(', ');
     if (pic === cur.pic) pic = null;
-    if (!fields.length && !disc && pic === null) throw new Error('Tidak ada yang diisi.');
+    // Mesin/line dari Daftar Mesin (nomor baris di sheet itu); C ditulis persis seperti di daftar.
+    var mEntry = null;
+    if (item.machine != null && item.machine !== '') {
+      mEntry = (machineList_(ss) || []).filter(function (m) { return m.row === Number(item.machine); })[0];
+      if (!mEntry) throw new Error('Mesin yang dipilih sudah tidak ada di Daftar Mesin. Muat ulang.');
+      if (machineEntryText_(mEntry) === cur.machine) mEntry = null;
+    }
+    if (!fields.length && !disc && pic === null && !mEntry) throw new Error('Tidak ada yang diisi.');
 
     // Terjemahkan dulu (kecuali yang sudah ditulis dengan huruf Mandarin), baru tulis.
     var toTranslate = TRANSLATE ? fields.filter(function (f) { return !hasChinese_(f.text); }) : [];
@@ -206,6 +217,13 @@ function saveCompletion(item) {
     });
     if (disc) sh.getRange(row, COL.DISCIPLINE).setValue(disc);
     if (pic !== null) sh.getRange(row, COL.PIC).setValue(asText_(pic));
+    if (mEntry) {
+      var cNote = data.notes[0][COL.MACHINE - COL.NO];
+      var orig = originalFromNote_(cNote) || (hasChinese_(cur.machine) ? '' : cur.machine);
+      sh.getRange(row, COL.MACHINE).setValue(asText_(machineEntryText_(mEntry))).setNote(orig ? NOTE_PREFIX + orig : cNote);
+      var sm = splitMachine_(orig);
+      learnMachineAliases_(ss, [{ entry: mEntry, alias: sm ? sm.process : '' }]);
+    }
     SpreadsheetApp.flush();
 
     var after = readRows_(sh, row, 1);

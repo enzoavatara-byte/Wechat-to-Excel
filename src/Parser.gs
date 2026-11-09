@@ -359,10 +359,14 @@ function projectKey_(s) {
 }
 
 /** `routes` = kode proyek -> sheet (lihat projectRoutes_); default PROJECT_SHEET dari Config. */
+/** "DJ2518 - VFLimo7" -> ['DJ2518VFLIMO7', 'DJ2518', 'VFLIMO7']: nama lengkap dulu, lalu tiap bagian. */
+function projectKeys_(project) {
+  return [project].concat(String(project || '').split(/\s+[-\u2013\u2014]\s+/)).map(projectKey_).filter(Boolean);
+}
+
 function targetSheetName_(rec, otherSheet, routes) {
   routes = routes || PROJECT_SHEET;
-  // "DJ2518 - VFLimo7": nama lengkap dulu, lalu tiap bagian (kode "DJ2518" atau "VFLimo7").
-  var keys = [rec.project].concat(String(rec.project || '').split(/\s+[-\u2013\u2014]\s+/)).map(projectKey_);
+  var keys = projectKeys_(rec.project);
   for (var i = 0; i < keys.length; i++) {
     if (keys[i] && routes.hasOwnProperty(keys[i])) return routes[keys[i]];
   }
@@ -398,7 +402,7 @@ function buildRow_(rec) {
   var notesBase = tr ? notesBi_(rec) : buildNotes_(rec);
   return {
     values: {
-      MACHINE: tr ? machineBi_(rec) : rec.machine,
+      MACHINE: rec.machineEntry ? machineEntryText_(rec.machineEntry) : (tr ? machineBi_(rec) : rec.machine),
       DESC: tr ? descBi_(rec) : rec.description,
       END_TIME: rec.end.time ? timeSerial_(rec.end.time) : '',
       DISCIPLINE: rec.discipline,
@@ -462,10 +466,15 @@ function cellNotes_(rec, translated) {
   if (rec.disciplineManual) k.push('Discipline dipilih manual');
   rec.warnings.forEach(function (w) { k.push('⚠ ' + w.msg); });
   return {
-    MACHINE: translated && rec.machine ? NOTE_PREFIX + rec.machine : '',
+    MACHINE: (translated || rec.machineEntry) && rec.machine ? NOTE_PREFIX + rec.machine : '',
     DESC: translated && rec.description ? NOTE_PREFIX + rec.description : '',
     NOTES: k.join('\n')
   };
+}
+
+/** Isi kolom C dari Daftar Mesin: "中文\n(English)" persis seperti di daftar. */
+function machineEntryText_(m) {
+  return m.zh + '\n(' + m.en + ')';
 }
 
 /** Nama pelapor ditambahkan di akhir K (tidak diterjemahkan). K dua bahasa: di kedua baris. */

@@ -57,8 +57,18 @@ var DISCIPLINE_MAP = {
 // Tetap tampil di pratinjau supaya laporan yang salah label bisa dicentang manual.
 var SKIP_TYPES = ['changeover'];
 
-// Nama PIC tim (opsional), muncul sebagai pilihan di pemilih PIC walau belum pernah dipakai.
-// Nama yang sudah ada di kolom I (Responsibility) sheet issue mana pun otomatis ikut muncul.
+// Daftar nama PIC yang diatur sendiri di spreadsheet (menu WeChat Import → Kelola daftar PIC).
+// Kalau sheet ini ada dan berisi nama: pemilih PIC HANYA menampilkan nama di sheet ini, urut seperti di sheet,
+// dan "nama lain di WeChat" (kolom B) otomatis diganti ke nama di kolom A saat impor.
+// Kalau sheet ini tidak ada / kosong: nama diambil otomatis dari kolom I semua sheet issue (+ PIC_NAMES).
+var PIC_SHEET = 'Daftar PIC';
+
+// Daftar nama mesin / line yang diatur sendiri (menu WeChat Import → Kelola daftar mesin): 中文 | English |
+// Proyek | nama di laporan ③. Laporan yang ③-nya cocok memakai teks daftar ini untuk kolom Machine (C) persis
+// apa adanya, tanpa terjemahan mesin. Pilihan di layar Periksa dipelajari (ditambahkan ke kolom nama di laporan).
+var MACHINE_SHEET = 'Daftar Mesin';
+
+// Nama PIC tim (opsional, hanya dipakai kalau sheet Daftar PIC belum ada).
 var PIC_NAMES = [];
 
 // ---------- Terjemahan (Translate.gs) ----------
