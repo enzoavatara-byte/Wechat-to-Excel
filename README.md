@@ -69,6 +69,20 @@ PASTE teks WeChat → PERIKSA (centang, pilih Discipline, cek terjemahan) → IM
 7. *(Opsional)* **Web app**: Deploy → **New deployment** → ⚙ **Web app** →
    Execute as: **Me** · Who has access: **Only myself** → Deploy → salin URL berakhiran `/exec`, bookmark.
 
+### Update otomatis dengan clasp (opsional, sekali setup)
+Ganti paste manual dengan satu perintah. Dilakukan di komputer Anda (clasp login memakai akun Google Anda).
+1. Pasang [Node.js LTS](https://nodejs.org) dan [Git](https://git-scm.com).
+2. `git clone https://github.com/enzoavatara-byte/Wechat-to-Excel.git` → `cd Wechat-to-Excel` → `git checkout feat/wechat-import`.
+3. `npm install -g @google/clasp`
+4. Buka https://script.google.com/home/usersettings dengan akun pemilik spreadsheet → **Google Apps Script API: On**.
+5. `clasp login` → pilih akun yang sama → Allow.
+6. Spreadsheet → Extensions → Apps Script → ⚙ Project Settings → salin **Script ID**.
+7. Salin `.clasp.json.example` jadi `.clasp.json`, isi `scriptId` (file ini tidak ikut ke Git).
+8. `npm run push` → build `dist/` lalu kirim Code.gs, Index, appsscript.json ke proyek Apps Script.
+
+Update berikutnya: `git pull` lalu `npm run push`. Web app (`/exec`) tetap memakai versi deployment lama sampai
+Deploy → Manage deployments → pensil → **New version** (URL tidak berubah).
+
 ### Update kode
 - Paste ulang `dist/Code.gs` dan/atau `dist/Index.html` → Simpan. Menu/dialog langsung memakai kode baru.
 - Web app: **Deploy → Manage deployments** → ikon pensil → Version: **New version** → Deploy.

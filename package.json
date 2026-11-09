@@ -4,6 +4,7 @@
   "description": "Laporan WeChat ①–⑨ -> sheet Statistical Analysis of Issues (Google Apps Script)",
   "scripts": {
     "build": "node scripts/build.js",
-    "test": "node --test test/*.test.js"
+    "test": "node --test test/*.test.js",
+    "push": "node scripts/build.js && clasp push"
   }
 }
