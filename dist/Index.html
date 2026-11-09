@@ -129,6 +129,10 @@
   .heat-cell.future { background: transparent; }
   .heat-cell.today { box-shadow: inset 0 0 0 2px rgba(255, 255, 255, .55); }
   .heat-cell.sel { outline: 2px solid #fff; outline-offset: 1px; }
+  .heat-legend { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 4px; margin-top: 10px;
+    font-size: 11.5px; color: rgba(255, 255, 255, .72); }
+  .heat-legend .heat-cell { display: inline-block; width: 12px; height: 12px; aspect-ratio: auto; margin-left: 6px; cursor: default; }
+  #date-warn .alert { margin: 12px 0 0; }
   .heat-foot { position: relative; display: flex; align-items: center; justify-content: center; min-height: 38px; margin-top: 12px; font-weight: 500; }
   .heat-foot .hbtn.sm:first-child { position: absolute; left: 0; }
   .heat-foot .hbtn.sm:last-child { position: absolute; right: 0; }
@@ -404,7 +408,16 @@
           <span id="heat-range">Memuat…</span>
           <button type="button" class="hbtn sm" id="heat-next" aria-label="20 minggu berikutnya"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></button>
         </div>
+        <div class="heat-legend">
+          <span>Issue per hari:</span>
+          <span class="heat-cell"></span>0
+          <span class="heat-cell l1"></span>1
+          <span class="heat-cell l2"></span>2
+          <span class="heat-cell l3"></span>3
+          <span class="heat-cell l4"></span>4+
+        </div>
       </div>
+      <div id="date-warn"></div>
       <div class="stat-grid" id="stat-grid"></div>
       <div class="records-head">
         <div class="records-title">Riwayat</div>
@@ -547,7 +560,7 @@
     </div>
   </div>
 
-  <script>var APP_MODE = <?!= JSON.stringify(mode) ?>; var CLIENT_VERSION = 'c12d38a';</script>
+  <script>var APP_MODE = <?!= JSON.stringify(mode) ?>; var CLIENT_VERSION = '32ca4b0';</script>
   <script>
 (function () {
   'use strict';
@@ -821,8 +834,39 @@
 
   function renderDash() {
     renderHeat();
+    renderDateWarn();
     renderStats();
     renderRecords();
+  }
+
+  /** [9, 10, 11, 15] -> "9–11, 15" */
+  function rowRanges(rows) {
+    rows = rows.slice().sort(function (a, b) { return a - b; });
+    var out = [], s = rows[0], p = rows[0];
+    for (var i = 1; i <= rows.length; i++) {
+      if (rows[i] === p + 1) { p = rows[i]; continue; }
+      out.push(s === p ? String(s) : s + '–' + p);
+      s = p = rows[i];
+    }
+    return out.join(', ');
+  }
+
+  /**
+   * Issue yang tanggalnya (J) tidak terbaca, mis. teks "11月1日" tanpa tahun, tidak bisa masuk heatmap &
+   * angka. Ditampilkan terang-terangan supaya tidak diam-diam hilang dari hitungan.
+   */
+  function renderDateWarn() {
+    var bad = state.dash.rows.filter(function (r) { return !r.day; });
+    if (!bad.length) { $('date-warn').innerHTML = ''; return; }
+    var bySheet = {}, sample = '';
+    bad.forEach(function (r) {
+      (bySheet[r.sheet] = bySheet[r.sheet] || []).push(r.row);
+      if (!sample && r.date) sample = r.date;
+    });
+    var where = Object.keys(bySheet).map(function (s) { return s + ' baris ' + rowRanges(bySheet[s]); }).join('; ');
+    $('date-warn').innerHTML = '<div class="alert warn"><b>' + bad.length + ' issue tidak ikut dihitung</b> di heatmap &amp; angka: ' +
+      'tanggal (kolom J) ' + (sample ? 'tidak terbaca, mis. “' + esc(sample) + '” (teks, bukan tanggal)' : 'kosong') +
+      '. ' + esc(where) + '. Isi J dengan tanggal asli, mis. 2026/11/01.</div>';
   }
 
   function heatWindow() {

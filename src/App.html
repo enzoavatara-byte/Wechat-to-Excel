@@ -271,8 +271,39 @@
 
   function renderDash() {
     renderHeat();
+    renderDateWarn();
     renderStats();
     renderRecords();
+  }
+
+  /** [9, 10, 11, 15] -> "9–11, 15" */
+  function rowRanges(rows) {
+    rows = rows.slice().sort(function (a, b) { return a - b; });
+    var out = [], s = rows[0], p = rows[0];
+    for (var i = 1; i <= rows.length; i++) {
+      if (rows[i] === p + 1) { p = rows[i]; continue; }
+      out.push(s === p ? String(s) : s + '–' + p);
+      s = p = rows[i];
+    }
+    return out.join(', ');
+  }
+
+  /**
+   * Issue yang tanggalnya (J) tidak terbaca, mis. teks "11月1日" tanpa tahun, tidak bisa masuk heatmap &
+   * angka. Ditampilkan terang-terangan supaya tidak diam-diam hilang dari hitungan.
+   */
+  function renderDateWarn() {
+    var bad = state.dash.rows.filter(function (r) { return !r.day; });
+    if (!bad.length) { $('date-warn').innerHTML = ''; return; }
+    var bySheet = {}, sample = '';
+    bad.forEach(function (r) {
+      (bySheet[r.sheet] = bySheet[r.sheet] || []).push(r.row);
+      if (!sample && r.date) sample = r.date;
+    });
+    var where = Object.keys(bySheet).map(function (s) { return s + ' baris ' + rowRanges(bySheet[s]); }).join('; ');
+    $('date-warn').innerHTML = '<div class="alert warn"><b>' + bad.length + ' issue tidak ikut dihitung</b> di heatmap &amp; angka: ' +
+      'tanggal (kolom J) ' + (sample ? 'tidak terbaca, mis. “' + esc(sample) + '” (teks, bukan tanggal)' : 'kosong') +
+      '. ' + esc(where) + '. Isi J dengan tanggal asli, mis. 2026/11/01.</div>';
   }
 
   function heatWindow() {

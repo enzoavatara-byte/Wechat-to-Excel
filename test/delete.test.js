@@ -85,6 +85,21 @@ test('tanggal J dari sel bertanggal asli (tampil "11/1/2026" di locale US) dibac
   assert.equal(p.records.find((r) => r.start === '20:15').duplicateOf.row, 18);
 });
 
+test('tanggal teks: tahun-bulan-tanggal dibaca, tanpa tahun / urutan ambigu dibiarkan (tidak ditebak)', () => {
+  const { gas, ss } = setup();
+  assert.equal(gas.normDate_('2026年11月1日'), '2026/11/01');
+  assert.equal(gas.normDate_('2026-11-1'), '2026/11/01');
+  assert.equal(gas.normDate_('2026.11.05'), '2026/11/05');
+  assert.equal(gas.normDate_('46310'), '2026/10/15');
+  assert.equal(gas.normDate_('11月1日'), '11月1日');
+  assert.equal(gas.normDate_('11/6/2026'), '11/6/2026');
+  assert.equal(gas.normDate_('2026/02/30'), '2026/02/30'); // tanggal mustahil: apa adanya
+  const limo = ss.getSheetByName('LImo 7 list');
+  limo.set('J9', '11月1日').set('J10', '2026年11月2日');
+  const rows = plain(gas.getDashboard()).rows.filter((r) => r.sheet === 'LImo 7 list');
+  assert.deepEqual([rows.find((r) => r.row === 9).date, rows.find((r) => r.row === 10).date], ['11月1日', '2026/11/02']);
+});
+
 test('E/F berisi "-" (sengaja tidak ada) dianggap terisi', () => {
   const { gas, geely } = setup();
   geely.set('E18', '-\n(-)').set('F18', '-');

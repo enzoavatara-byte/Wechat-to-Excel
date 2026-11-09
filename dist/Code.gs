@@ -11,7 +11,7 @@
  */
 var APP_NAME = 'WeChat Import';
 // Diisi otomatis oleh `npm run build` (dist/). Tampil di UI & setup untuk memastikan kode terbaru yang jalan.
-var APP_VERSION = 'c12d38a';
+var APP_VERSION = '32ca4b0';
 
 // Struktur sheet manajer: header di baris 8, data mulai baris 9.
 var ROW = {
@@ -1806,14 +1806,20 @@ function hasChinese_(s) {
 }
 
 /**
- * Tanggal J seperti tampil. Baris lama manajer menyimpan nomor seri berformat General (tampil "46313"),
- * diubah ke yyyy/mm/dd supaya terbaca dan bisa diurutkan bersama baris dari tool.
+ * Tanggal J seperti tampil (untuk sel yang BUKAN tanggal asli, lihat dateTexts_):
+ * - nomor seri berformat General (baris lama manajer, tampil "46313") -> yyyy/mm/dd;
+ * - teks tahun-bulan-tanggal ("2026-11-1", "2026.11.01", "2026年11月1日") -> yyyy/mm/dd.
+ * Teks tanpa tahun ("11月1日") atau berurutan bulan/tanggal yang ambigu ("11/6/2026") dibiarkan apa adanya:
+ * tidak ditebak; Ringkasan menandainya sebagai tanggal yang tidak terbaca.
  */
 function normDate_(shown) {
   var s = String(shown || '').trim();
-  if (!/^\d{5}$/.test(s)) return s;
-  var d = new Date(Date.UTC(1899, 11, 30) + Number(s) * 86400000);
-  return fmtDate_({ y: d.getUTCFullYear(), m: d.getUTCMonth() + 1, d: d.getUTCDate() });
+  if (/^\d{5}$/.test(s)) {
+    var d = new Date(Date.UTC(1899, 11, 30) + Number(s) * 86400000);
+    return fmtDate_({ y: d.getUTCFullYear(), m: d.getUTCMonth() + 1, d: d.getUTCDate() });
+  }
+  var m = /^(\d{4})\s*(?:[.\-\/]|\u5E74)\s*(\d{1,2})\s*(?:[.\-\/]|\u6708)\s*(\d{1,2})\s*\u65E5?$/.exec(s);
+  return m && isValidDate_(+m[1], +m[2], +m[3]) ? fmtDate_({ y: +m[1], m: +m[2], d: +m[3] }) : s;
 }
 
 /**
