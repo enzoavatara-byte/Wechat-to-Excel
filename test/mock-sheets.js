@@ -53,8 +53,8 @@ class MockRange {
     this.each((r, c, i, j) => { out[i][j] = fn(this.sheet.cell(r, c)); });
     return out;
   }
-  getValues() { return this.grid((x) => (x.v === undefined ? '' : unquote(x.v))); }
-  getDisplayValues() { return this.grid((x) => this.sheet.evaluate(x) ?? display(x.v, x.f)); }
+  getValues() { this.sheet.raise(); return this.grid((x) => (x.v === undefined ? '' : unquote(x.v))); }
+  getDisplayValues() { this.sheet.raise(); return this.grid((x) => this.sheet.evaluate(x) ?? display(x.v, x.f)); }
   setFormulas(f) { return this.setValues(f); }
   getValue() { return this.getValues()[0][0]; }
   setValues(v) {
@@ -74,7 +74,15 @@ class MockRange {
     return this;
   }
   setValue(v) { return this.setValues([[v]]); }
-  setNumberFormat(f) { this.each((r, c) => { this.sheet.cell(r, c).f = f; }); return this; }
+  setNumberFormat(f) {
+    // Seperti Google: kolom ber-tipe di Table menolak, dan kesalahannya baru muncul di panggilan berikutnya.
+    let typed = false;
+    this.each((r, c) => { if (this.sheet.typedCols && this.sheet.typedCols.has(c) && r >= this.sheet.typedFrom) typed = true; });
+    if (typed) { this.sheet.ss.pendingError = new Error("You can't set the number format of cells in a typed column."); return this; }
+    this.each((r, c) => { this.sheet.cell(r, c).f = f; });
+    return this;
+  }
+  getNumberFormat() { this.sheet.raise(); return this.sheet.cell(this.row, this.col).f || 'General'; }
   setBackground(bg) { this.each((r, c) => { this.sheet.cell(r, c).bg = bg; }); return this; }
   getDataValidation() { return this.sheet.validations.get(this.row + ',' + this.col) || null; }
   getNotes() { return this.grid((x) => x.note || ''); }
@@ -151,6 +159,11 @@ class MockSheet {
   set(a1, v) { const [r, c] = parseA1(a1); this.cell(r, c).v = v; return this; }
   getName() { return this.name; }
   getSheetId() { return this.id; }
+  /** Kesalahan Google yang tertunda muncul di panggilan berikutnya (lihat setNumberFormat). */
+  raise() {
+    const e = this.ss && this.ss.pendingError;
+    if (e) { this.ss.pendingError = null; throw e; }
+  }
   /** Seperti Google: baris dihapus utuh, baris di bawahnya naik satu (isi, catatan, dropdown). */
   deleteRow(r) {
     const shift = (map) => {
@@ -320,7 +333,7 @@ function services(ss) {
     SpreadsheetApp: {
       getActiveSpreadsheet: () => ss,
       getActiveRange: () => ss.activeRange || null,
-      flush() {},
+      flush() { const e = ss.pendingError; if (e) { ss.pendingError = null; throw e; } },
       DataValidationCriteria: { VALUE_IN_LIST: 'VALUE_IN_LIST', VALUE_IN_RANGE: 'VALUE_IN_RANGE' },
       CopyPasteType: { PASTE_FORMAT: 'PASTE_FORMAT', PASTE_DATA_VALIDATION: 'PASTE_DATA_VALIDATION' },
       newDataValidation() {

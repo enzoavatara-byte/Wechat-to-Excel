@@ -460,13 +460,37 @@ function writeRecord(sh, row, rec, override) {
       run = [];
     }
   });
-  sh.getRange(row, COL.END_TIME).setNumberFormat(FORMAT.END_TIME);
-  sh.getRange(row, COL.DATE).setNumberFormat(FORMAT.DATE);
+  setCellFormat_(sh, row, COL.END_TIME, FORMAT.END_TIME);
+  setCellFormat_(sh, row, COL.DATE, FORMAT.DATE);
   var notes = [];
   for (var c = COL.MACHINE; c <= COL.NOTES; c++) notes.push('');
   Object.keys(out.notes).forEach(function (k) { notes[COL[k] - COL.MACHINE] = out.notes[k]; });
   sh.getRange(row, COL.MACHINE, 1, notes.length).setNotes([notes]).setBackground(null);
   return { row: row, no: no, values: finalValues };
+}
+
+// Kolom (sheetId:kolom) yang menolak setNumberFormat selama proses ini, supaya tidak dicoba berulang.
+var FIXED_FORMAT_COLS_ = {};
+
+/**
+ * Format jam (G) / tanggal (J) satu sel, hanya kalau formatnya belum sama.
+ * Kolom ber-tipe di "Table" Google Sheets (mis. End Time = Time, Date = Date) menolak setNumberFormat
+ * ("You can't set the number format of cells in a typed column"): formatnya sudah diatur Table, jadi dilewati.
+ * Google melaporkan penolakan itu terlambat (di baca/tulis berikutnya), maka di-flush di sini supaya tidak
+ * menggagalkan laporan berikutnya.
+ */
+function setCellFormat_(sh, row, col, format) {
+  var key = sh.getSheetId() + ':' + col;
+  if (FIXED_FORMAT_COLS_[key]) return;
+  var cell = sh.getRange(row, col);
+  if (cell.getNumberFormat && cell.getNumberFormat() === format) return;
+  try {
+    cell.setNumberFormat(format);
+    SpreadsheetApp.flush();
+  } catch (e) {
+    if (!/typed column|number format/i.test(String(e.message || e))) throw e;
+    FIXED_FORMAT_COLS_[key] = true;
+  }
 }
 
 /**
@@ -708,7 +732,15 @@ function importWeChat(text, otherSheet, picks, opts) {
         return;
       }
       var row = findNextRow(sh, nextFrom[name]);
-      var res = writeRecord(sh, row, rec, it.override);
+      var res;
+      try {
+        res = writeRecord(sh, row, rec, it.override);
+        SpreadsheetApp.flush(); // kesalahan dari Google muncul di laporan ini, bukan di laporan berikutnya
+      } catch (e) {
+        nextFrom[name] = row + 1;
+        errors.push(label + ': ' + (e.message || e) + ' Baris ' + row + ' di "' + name + '" mungkin terisi sebagian, cek dulu.');
+        return;
+      }
       nextFrom[name] = row + 1;
       var view = writtenView_(rec, it, res.values);
       view.sheet = name;

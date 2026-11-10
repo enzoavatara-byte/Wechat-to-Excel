@@ -319,3 +319,20 @@ test('menu Terjemahkan: sel ber-dropdown di kolom yang boleh diterjemahkan tetap
   assert.equal(res.count, 0);
   assert.equal(geely.get('E20'), 'Machine');
 });
+
+test('sheet dengan Table Google (kolom End Time/Date ber-tipe): semua laporan tetap ditulis, format dibiarkan', () => {
+  const { gas, geely } = setup();
+  geely.typedCols = new Set([7, 10]); // G, J
+  geely.typedFrom = 9;
+  const p = plain(gas.previewWeChat(SAMPLE, 'LImo 7 list'));
+  const all = p.records.filter((r) => r.writable).map((r) => ({ id: r.id, discipline: r.discipline }));
+  const res = plain(gas.importWeChat(SAMPLE, 'LImo 7 list', all));
+  assert.deepEqual(res.errors, []);
+  const g = res.written.filter((w) => w.sheet === 'Geely list (2)');
+  assert.equal(g.length, 5); // sebelumnya: laporan sesudah laporan yang gagal format ikut "tidak ditulis"
+  g.forEach((w) => {
+    assert.equal(typeof geely.get('G' + w.row), 'number');
+    assert.equal(typeof geely.get('J' + w.row), 'number');
+    assert.ok(String(geely.get('C' + w.row)).length > 0);
+  });
+});
